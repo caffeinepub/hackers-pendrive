@@ -1,0 +1,22 @@
+{
+  "overview": "A sleek e-commerce website to sell the Hacker's Pendrive — a 32GB USB drive loaded with 125+ ethical hacking and cybersecurity tools. Features a product showcase, checkout with UPI payment, and a contact page.",
+  "features": [
+    "Product landing page with specs and pricing",
+    "Shopping cart with quantity management",
+    "Checkout page with customer info form",
+    "UPI payment page (gauravsaswade03@okaxis)",
+    "Payment confirmation screen",
+    "Contact page with email and phone"
+  ],
+  "category": "e-commerce",
+  "tags": [
+    "hacking",
+    "cybersecurity",
+    "pendrive",
+    "ecommerce",
+    "upi",
+    "payment",
+    "tools"
+  ],
+  "last_updated": "2026-04-08T12:15:07.504Z"
+}

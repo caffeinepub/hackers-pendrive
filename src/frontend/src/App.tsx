@@ -2021,6 +2021,361 @@ function CustomerPage() {
   );
 }
 
+// ── Customer Accounts (login/signup) ────────────────────────────
+
+const CUSTOMER_ACCOUNTS_KEY = "customer-accounts";
+const CUSTOMER_AUTH_KEY = "customer-auth";
+
+interface CustomerAccount {
+  id: string;
+  name: string;
+  email: string;
+  passwordHash: string;
+  phone: string;
+  createdAt: string;
+}
+
+function simpleHash(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash * 31 + str.charCodeAt(i)) & 0xffffffff;
+  }
+  return hash.toString(16);
+}
+
+function getCustomerAccounts(): CustomerAccount[] {
+  try {
+    const stored = localStorage.getItem(CUSTOMER_ACCOUNTS_KEY);
+    if (stored) return JSON.parse(stored) as CustomerAccount[];
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
+
+function saveCustomerAccount(account: CustomerAccount) {
+  const accounts = getCustomerAccounts();
+  accounts.push(account);
+  localStorage.setItem(CUSTOMER_ACCOUNTS_KEY, JSON.stringify(accounts));
+}
+
+function setCustomerAuth(session: {
+  customerId: string;
+  email: string;
+  name: string;
+}) {
+  sessionStorage.setItem(CUSTOMER_AUTH_KEY, JSON.stringify(session));
+  localStorage.setItem(CUSTOMER_AUTH_KEY, JSON.stringify(session));
+}
+
+function LoginPage() {
+  const navigate = useNavigate();
+  const [form, setForm] = useState({ email: "", password: "" });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    const accounts = getCustomerAccounts();
+    const account = accounts.find(
+      (a) =>
+        a.email.toLowerCase() === form.email.trim().toLowerCase() &&
+        a.passwordHash === simpleHash(form.password),
+    );
+    setTimeout(() => {
+      setLoading(false);
+      if (account) {
+        setCustomerAuth({
+          customerId: account.id,
+          email: account.email,
+          name: account.name,
+        });
+        toast.success(`Welcome back, ${account.name.split(" ")[0]}!`);
+        navigate({ to: "/customer" });
+      } else {
+        setError("Invalid email or password. Please try again.");
+      }
+    }, 400);
+  };
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="w-full max-w-sm"
+      >
+        <div className="text-center mb-8">
+          <div className="w-12 h-12 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center mx-auto mb-4 glow-accent">
+            <User className="w-6 h-6 text-primary" />
+          </div>
+          <h1 className="font-display font-black text-2xl text-foreground uppercase tracking-tight mb-1">
+            Customer <span className="text-primary">Login</span>
+          </h1>
+          <p className="text-xs text-muted-foreground font-mono">
+            Sign in to manage your orders
+          </p>
+        </div>
+        <form
+          onSubmit={handleSubmit}
+          className="bg-card border border-primary/30 rounded-lg p-6 flex flex-col gap-5 shadow-[0_0_30px_oklch(0.70_0.18_142/0.08)]"
+          data-ocid="login-form"
+        >
+          <div className="flex flex-col gap-1.5">
+            <Label
+              htmlFor="login-email"
+              className="text-xs font-mono text-muted-foreground tracking-wider uppercase"
+            >
+              Email
+            </Label>
+            <Input
+              id="login-email"
+              type="email"
+              value={form.email}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, email: e.target.value }))
+              }
+              placeholder="your@email.com"
+              required
+              className="bg-background border-border focus:border-primary"
+              data-ocid="login-email-input"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label
+              htmlFor="login-password"
+              className="text-xs font-mono text-muted-foreground tracking-wider uppercase"
+            >
+              Password
+            </Label>
+            <Input
+              id="login-password"
+              type="password"
+              value={form.password}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, password: e.target.value }))
+              }
+              placeholder="••••••••"
+              required
+              className="bg-background border-border focus:border-primary"
+              data-ocid="login-password-input"
+            />
+          </div>
+          {error && (
+            <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded px-3 py-2">
+              {error}
+            </p>
+          )}
+          <Button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-display font-bold tracking-widest uppercase glow-accent transition-smooth disabled:opacity-50"
+            data-ocid="login-submit-btn"
+          >
+            {loading ? "Signing in…" : "Login"}
+          </Button>
+        </form>
+        <p className="text-center mt-5 text-xs text-muted-foreground">
+          Don't have an account?{" "}
+          <button
+            type="button"
+            onClick={() => navigate({ to: "/signup" })}
+            className="text-primary hover:underline"
+          >
+            Sign Up →
+          </button>
+        </p>
+        <p className="text-center mt-2 text-xs text-muted-foreground">
+          <Link to="/" className="hover:text-primary transition-smooth">
+            ← Back to Store
+          </Link>
+        </p>
+      </motion.div>
+    </div>
+  );
+}
+
+function SignupPage() {
+  const navigate = useNavigate();
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    password: "",
+    confirm: "",
+  });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (form.password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+    if (form.password !== form.confirm) {
+      setError("Passwords do not match.");
+      return;
+    }
+    const accounts = getCustomerAccounts();
+    if (
+      accounts.some(
+        (a) => a.email.toLowerCase() === form.email.trim().toLowerCase(),
+      )
+    ) {
+      setError("An account with this email already exists.");
+      return;
+    }
+    setLoading(true);
+    const account: CustomerAccount = {
+      id: `CUST-${Date.now()}`,
+      name: form.name.trim(),
+      email: form.email.trim().toLowerCase(),
+      passwordHash: simpleHash(form.password),
+      phone: form.phone.trim(),
+      createdAt: new Date().toISOString(),
+    };
+    setTimeout(() => {
+      saveCustomerAccount(account);
+      setCustomerAuth({
+        customerId: account.id,
+        email: account.email,
+        name: account.name,
+      });
+      setLoading(false);
+      toast.success("Account created! Welcome aboard.");
+      navigate({ to: "/customer" });
+    }, 500);
+  };
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-10">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="w-full max-w-sm"
+      >
+        <div className="text-center mb-8">
+          <div className="w-12 h-12 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center mx-auto mb-4 glow-accent">
+            <User className="w-6 h-6 text-primary" />
+          </div>
+          <h1 className="font-display font-black text-2xl text-foreground uppercase tracking-tight mb-1">
+            Create <span className="text-primary">Account</span>
+          </h1>
+          <p className="text-xs text-muted-foreground font-mono">
+            Sign up to order the Hacker's Pendrive
+          </p>
+        </div>
+        <form
+          onSubmit={handleSubmit}
+          className="bg-card border border-primary/30 rounded-lg p-6 flex flex-col gap-4 shadow-[0_0_30px_oklch(0.70_0.18_142/0.08)]"
+          data-ocid="signup-form"
+        >
+          {[
+            {
+              id: "signup-name",
+              name: "name",
+              label: "Full Name",
+              type: "text",
+              placeholder: "Your full name",
+              value: form.name,
+            },
+            {
+              id: "signup-email",
+              name: "email",
+              label: "Email",
+              type: "email",
+              placeholder: "your@email.com",
+              value: form.email,
+            },
+            {
+              id: "signup-phone",
+              name: "phone",
+              label: "Phone",
+              type: "tel",
+              placeholder: "+91 XXXXX XXXXX",
+              value: form.phone,
+            },
+            {
+              id: "signup-password",
+              name: "password",
+              label: "Password",
+              type: "password",
+              placeholder: "Min 6 characters",
+              value: form.password,
+            },
+            {
+              id: "signup-confirm",
+              name: "confirm",
+              label: "Confirm Password",
+              type: "password",
+              placeholder: "Repeat password",
+              value: form.confirm,
+            },
+          ].map((f) => (
+            <div key={f.id} className="flex flex-col gap-1.5">
+              <Label
+                htmlFor={f.id}
+                className="text-xs font-mono text-muted-foreground tracking-wider uppercase"
+              >
+                {f.label}
+              </Label>
+              <Input
+                id={f.id}
+                name={f.name}
+                type={f.type}
+                value={f.value}
+                onChange={handleChange}
+                placeholder={f.placeholder}
+                required
+                className="bg-background border-border focus:border-primary"
+                data-ocid={f.id}
+              />
+            </div>
+          ))}
+          {error && (
+            <p className="text-xs text-destructive bg-destructive/10 border border-destructive/30 rounded px-3 py-2">
+              {error}
+            </p>
+          )}
+          <Button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-display font-bold tracking-widest uppercase glow-accent transition-smooth disabled:opacity-50"
+            data-ocid="signup-submit-btn"
+          >
+            {loading ? "Creating account…" : "Create Account"}
+          </Button>
+        </form>
+        <p className="text-center mt-5 text-xs text-muted-foreground">
+          Already have an account?{" "}
+          <button
+            type="button"
+            onClick={() => navigate({ to: "/login" })}
+            className="text-primary hover:underline"
+          >
+            Login →
+          </button>
+        </p>
+        <p className="text-center mt-2 text-xs text-muted-foreground">
+          <Link to="/" className="hover:text-primary transition-smooth">
+            ← Back to Store
+          </Link>
+        </p>
+      </motion.div>
+    </div>
+  );
+}
+
 // ── Admin Login Page ────────────────────────────────────────────
 
 function AdminLoginPage() {
@@ -3421,6 +3776,16 @@ const complaintRoute = createRoute({
   path: "/complaints",
   component: ComplaintBoxPage,
 });
+const loginRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/login",
+  component: LoginPage,
+});
+const signupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/signup",
+  component: SignupPage,
+});
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
@@ -3433,6 +3798,8 @@ const routeTree = rootRoute.addChildren([
   adminLoginRoute,
   adminDashboardRoute,
   complaintRoute,
+  loginRoute,
+  signupRoute,
 ]);
 
 const router = createRouter({ routeTree });

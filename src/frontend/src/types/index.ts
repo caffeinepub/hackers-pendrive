@@ -71,3 +71,23 @@ export interface Complaint {
   timestamp: string;
   status: "Open" | "In Review" | "Resolved";
 }
+
+export interface CustomerAccount {
+  id: string;
+  name: string;
+  email: string;
+  passwordHash: string;
+  phone: string;
+  address: string;
+  city: string;
+  state: string;
+  pincode: string;
+  createdAt: string;
+  orders: string[];
+}
+
+export interface CustomerAuthSession {
+  customerId: string;
+  email: string;
+  name: string;
+}

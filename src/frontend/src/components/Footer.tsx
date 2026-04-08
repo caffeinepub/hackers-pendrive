@@ -36,6 +36,8 @@ export function Footer() {
                 { label: "Track Order", to: "/orders" as const },
                 { label: "My Orders", to: "/customer" as const },
                 { label: "Contact", to: "/contact" as const },
+                { label: "Login", to: "/login" as const },
+                { label: "Sign Up", to: "/signup" as const },
               ].map((link) => (
                 <Link
                   key={link.to}

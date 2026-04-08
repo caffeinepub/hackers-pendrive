@@ -1,9 +1,11 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/context/CartContext";
+import type { CustomerAuthSession } from "@/types";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   AlertOctagon,
+  LogOut,
   Menu,
   PackageSearch,
   ShoppingCart,
@@ -13,10 +15,39 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
+const CUSTOMER_AUTH_KEY = "customer-auth";
+
+function getCustomerAuth(): CustomerAuthSession | null {
+  try {
+    const stored =
+      sessionStorage.getItem(CUSTOMER_AUTH_KEY) ||
+      localStorage.getItem(CUSTOMER_AUTH_KEY);
+    if (stored) return JSON.parse(stored) as CustomerAuthSession;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 export function Header() {
   const { itemCount, toggleCart } = useCart();
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
+  const [auth, setAuth] = useState<CustomerAuthSession | null>(() =>
+    getCustomerAuth(),
+  );
+
+  const handleLogout = () => {
+    sessionStorage.removeItem(CUSTOMER_AUTH_KEY);
+    localStorage.removeItem(CUSTOMER_AUTH_KEY);
+    setAuth(null);
+    setMobileOpen(false);
+    navigate({ to: "/" });
+  };
+
+  // Re-check auth on each render so header stays in sync
+  const currentAuth = getCustomerAuth();
+  const displayAuth = currentAuth ?? auth;
 
   const navLinks = [
     { label: "Home", to: "/" as const },
@@ -67,17 +98,52 @@ export function Header() {
 
         {/* Actions */}
         <div className="flex items-center gap-2">
-          {/* Customer Login */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="hidden md:flex items-center gap-1.5 border-primary/40 text-primary hover:bg-primary hover:text-primary-foreground transition-smooth"
-            onClick={() => navigate({ to: "/customer" })}
-            data-ocid="header-customer-login-btn"
-          >
-            <User className="w-3.5 h-3.5" />
-            My Orders
-          </Button>
+          {displayAuth ? (
+            /* Logged-in state */
+            <div className="hidden md:flex items-center gap-2">
+              <Link
+                to="/customer"
+                className="flex items-center gap-1.5 text-sm font-mono text-primary hover:text-primary/80 transition-smooth"
+                data-ocid="header-customer-name"
+              >
+                <User className="w-3.5 h-3.5" />
+                <span className="max-w-[100px] truncate">
+                  Hi, {displayAuth.name.split(" ")[0]}
+                </span>
+              </Link>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-destructive/40 text-destructive hover:bg-destructive/10 transition-smooth font-mono text-xs"
+                onClick={handleLogout}
+                data-ocid="header-logout-btn"
+              >
+                <LogOut className="w-3.5 h-3.5 mr-1" />
+                Logout
+              </Button>
+            </div>
+          ) : (
+            /* Logged-out state */
+            <div className="hidden md:flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-primary/40 text-primary hover:bg-primary/10 transition-smooth font-mono text-xs"
+                onClick={() => navigate({ to: "/login" })}
+                data-ocid="header-login-btn"
+              >
+                Login
+              </Button>
+              <Button
+                size="sm"
+                className="bg-primary text-primary-foreground hover:bg-primary/90 transition-smooth font-mono text-xs glow-accent"
+                onClick={() => navigate({ to: "/signup" })}
+                data-ocid="header-signup-btn"
+              >
+                Sign Up
+              </Button>
+            </div>
+          )}
 
           <Button
             variant="outline"
@@ -149,32 +215,78 @@ export function Header() {
             <AlertOctagon className="w-3.5 h-3.5" />
             Complaint Box
           </Link>
-          <div className="flex gap-2 mt-1">
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex-1 border-primary/40 text-primary hover:bg-primary hover:text-primary-foreground"
-              onClick={() => {
-                setMobileOpen(false);
-                navigate({ to: "/customer" });
-              }}
-              data-ocid="mobile-customer-login-btn"
-            >
-              <User className="w-3.5 h-3.5 mr-1" />
-              My Orders
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex-1 border-primary/40 text-primary hover:bg-primary hover:text-primary-foreground"
-              onClick={() => {
-                setMobileOpen(false);
-                navigate({ to: "/checkout" });
-              }}
-            >
-              Buy Now
-            </Button>
-          </div>
+
+          {displayAuth ? (
+            /* Mobile logged-in */
+            <div className="flex flex-col gap-2 mt-1">
+              <div className="flex items-center gap-2 py-2 text-sm text-primary font-mono">
+                <User className="w-4 h-4" />
+                Hi, {displayAuth.name}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 border-primary/40 text-primary hover:bg-primary/10"
+                  onClick={() => {
+                    setMobileOpen(false);
+                    navigate({ to: "/customer" });
+                  }}
+                  data-ocid="mobile-my-orders-btn"
+                >
+                  My Orders
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 border-destructive/40 text-destructive hover:bg-destructive/10"
+                  onClick={handleLogout}
+                  data-ocid="mobile-logout-btn"
+                >
+                  <LogOut className="w-3.5 h-3.5 mr-1" />
+                  Logout
+                </Button>
+              </div>
+            </div>
+          ) : (
+            /* Mobile logged-out */
+            <div className="flex gap-2 mt-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 border-primary/40 text-primary hover:bg-primary/10"
+                onClick={() => {
+                  setMobileOpen(false);
+                  navigate({ to: "/login" });
+                }}
+                data-ocid="mobile-login-btn"
+              >
+                Login
+              </Button>
+              <Button
+                size="sm"
+                className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
+                onClick={() => {
+                  setMobileOpen(false);
+                  navigate({ to: "/signup" });
+                }}
+                data-ocid="mobile-signup-btn"
+              >
+                Sign Up
+              </Button>
+            </div>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-primary/40 text-primary hover:bg-primary hover:text-primary-foreground"
+            onClick={() => {
+              setMobileOpen(false);
+              navigate({ to: "/checkout" });
+            }}
+          >
+            Buy Now
+          </Button>
         </div>
       )}
     </header>

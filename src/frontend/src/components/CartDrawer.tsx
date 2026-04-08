@@ -2,8 +2,23 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useCart } from "@/context/CartContext";
+import type { CustomerAuthSession } from "@/types";
 import { useNavigate } from "@tanstack/react-router";
-import { Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
+import { Lock, Minus, Plus, ShoppingBag, Trash2, X } from "lucide-react";
+
+const CUSTOMER_AUTH_KEY = "customer-auth";
+
+function getCustomerAuth(): CustomerAuthSession | null {
+  try {
+    const stored =
+      sessionStorage.getItem(CUSTOMER_AUTH_KEY) ||
+      localStorage.getItem(CUSTOMER_AUTH_KEY);
+    if (stored) return JSON.parse(stored) as CustomerAuthSession;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
 
 export function CartDrawer() {
   const {
@@ -16,9 +31,14 @@ export function CartDrawer() {
     updateQuantity,
   } = useCart();
   const navigate = useNavigate();
+  const auth = getCustomerAuth();
 
   const handleCheckout = () => {
     closeCart();
+    if (!auth) {
+      navigate({ to: "/login" });
+      return;
+    }
     navigate({ to: "/checkout" });
   };
 
@@ -170,12 +190,20 @@ export function CartDrawer() {
                 ₹{total.toLocaleString("en-IN")}
               </span>
             </div>
+            {!auth && (
+              <div className="flex items-center gap-2 bg-primary/5 border border-primary/20 rounded px-3 py-2 mb-3">
+                <Lock className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+                <p className="text-xs text-muted-foreground">
+                  You must be logged in to checkout
+                </p>
+              </div>
+            )}
             <Button
               className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-display font-semibold tracking-wide glow-accent transition-smooth"
               onClick={handleCheckout}
               data-ocid="cart-checkout-btn"
             >
-              Proceed to Checkout
+              {auth ? "Proceed to Checkout" : "Login to Order"}
             </Button>
           </div>
         )}

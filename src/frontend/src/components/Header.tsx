@@ -107,9 +107,16 @@ export function Header() {
                 data-ocid="header-customer-name"
               >
                 <User className="w-3.5 h-3.5" />
-                <span className="max-w-[100px] truncate">
-                  Hi, {displayAuth.name.split(" ")[0]}
+                <span className="max-w-[120px] truncate">
+                  {displayAuth.name.split(" ")[0]}
                 </span>
+              </Link>
+              <Link
+                to="/customer"
+                className="hidden lg:flex items-center gap-1 text-xs font-mono text-muted-foreground hover:text-primary transition-smooth border border-border rounded px-2 py-1 hover:border-primary/40"
+                data-ocid="header-my-profile-link"
+              >
+                My Profile
               </Link>
               <Button
                 variant="outline"
@@ -232,9 +239,9 @@ export function Header() {
                     setMobileOpen(false);
                     navigate({ to: "/customer" });
                   }}
-                  data-ocid="mobile-my-orders-btn"
+                  data-ocid="mobile-my-profile-btn"
                 >
-                  My Orders
+                  My Profile
                 </Button>
                 <Button
                   variant="outline"

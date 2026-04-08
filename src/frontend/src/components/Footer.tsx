@@ -18,7 +18,7 @@ export function Footer() {
               </span>
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              32GB USB drive loaded with 125+ professional ethical hacking and
+              64GB USB drive loaded with 125+ professional ethical hacking and
               cybersecurity tools. Built for penetration testers, security
               researchers, and CTF players.
             </p>

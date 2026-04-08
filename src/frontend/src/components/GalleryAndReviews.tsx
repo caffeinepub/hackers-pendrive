@@ -12,27 +12,33 @@ import { toast } from "sonner";
 export const GALLERY_IMAGES = [
   {
     src: "/assets/generated/hero-pendrive.dim_1200x600.jpg",
-    alt: "Hacker's Pendrive — front view",
+    alt: "Hacker's Pendrive 64GB — front view",
+    label: "Hacker's Pendrive 64GB",
   },
   {
     src: "/assets/generated/gallery-side.dim_600x600.jpg",
     alt: "Side profile with glowing LED indicators",
+    label: "LED Indicator Strip",
   },
   {
     src: "/assets/generated/gallery-chip.dim_600x600.jpg",
-    alt: "32GB flash memory chip close-up",
+    alt: "64GB Flash Memory — high-speed chip close-up",
+    label: "64GB Flash Memory",
   },
   {
     src: "/assets/generated/gallery-tools.dim_600x600.jpg",
     alt: "125+ cybersecurity tools pre-installed",
+    label: "125+ Pre-installed Tools",
   },
   {
     src: "/assets/generated/gallery-terminal.dim_600x600.jpg",
     alt: "Live terminal — boot from USB in seconds",
+    label: "Boot-Ready Terminal",
   },
   {
     src: "/assets/generated/gallery-kit.dim_600x600.jpg",
     alt: "Full kit — USB + quick-start guide",
+    label: "Complete Kit",
   },
 ];
 
@@ -206,7 +212,10 @@ function Lightbox({
         <p className="text-sm font-body text-muted-foreground text-center">
           {images[index].alt}
         </p>
-        <p className="font-mono text-xs text-primary">
+        <p className="font-mono text-xs font-bold text-primary">
+          {images[index].label}
+        </p>
+        <p className="font-mono text-xs text-muted-foreground">
           {index + 1} / {images.length}
         </p>
       </motion.div>
@@ -236,11 +245,18 @@ export function ProductGallery() {
           transition={{ duration: 0.5 }}
           className="text-center mb-10"
         >
+          <div className="flex items-center justify-center gap-3 mb-4">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary/15 border border-primary/40 font-mono text-xs font-bold text-primary tracking-widest uppercase shadow-[0_0_12px_oklch(0.70_0.18_142/0.3)] animate-pulse">
+              ★ New 64GB Edition
+            </span>
+          </div>
           <h2 className="font-display font-black text-3xl lg:text-5xl text-foreground tracking-tight uppercase mb-3">
             Product <span className="text-primary">Gallery</span>
           </h2>
           <p className="text-muted-foreground font-body">
-            Click any image to view full size.
+            Now upgraded to{" "}
+            <span className="text-primary font-semibold">64GB</span> — click any
+            image to view full size.
           </p>
         </motion.div>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 lg:gap-4">
@@ -266,6 +282,13 @@ export function ProductGallery() {
                     "/assets/generated/hero-pendrive.dim_1200x600.jpg";
                 }}
               />
+              {/* Label overlay — always visible at bottom */}
+              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2.5 py-2 translate-y-0">
+                <p className="font-mono text-[10px] sm:text-xs font-bold text-primary truncate">
+                  {img.label}
+                </p>
+              </div>
+              {/* Zoom overlay on hover */}
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-300 flex items-center justify-center opacity-0 group-hover:opacity-100">
                 <ZoomIn className="w-8 h-8 text-primary drop-shadow-lg" />
               </div>

@@ -34,6 +34,7 @@ import {
   Download,
   HardDrive,
   Home,
+  KeyRound,
   Lock,
   LogOut,
   Mail,
@@ -68,14 +69,14 @@ import { toast } from "sonner";
 // ── Constants ────────────────────────────────────────────────────
 
 const PRODUCT_DEFAULT: Product = {
-  id: "hackers-pendrive-32gb",
-  name: "Hacker's Pendrive 32GB",
+  id: "hackers-pendrive-64gb",
+  name: "Hacker's Pendrive 64GB",
   description:
-    "32GB USB drive with 125+ professional ethical hacking and cybersecurity tools pre-installed.",
+    "64GB USB drive with 125+ professional ethical hacking and cybersecurity tools pre-installed.",
   price: 3999,
   originalPrice: 4999,
   image: "/assets/generated/hero-pendrive.dim_1200x600.jpg",
-  features: ["125+ Tools", "32GB USB 3.2", "AES-256 Encrypted", "Plug & Play"],
+  features: ["125+ Tools", "64GB USB 3.2", "AES-256 Encrypted", "Plug & Play"],
   category: "cybersecurity",
 };
 
@@ -119,7 +120,7 @@ function getSiteSettings(): SiteSettings {
   return {
     headline: "HACKER'S PENDRIVE",
     subheadline:
-      "Advanced Cybersecurity Framework on a 32GB USB. Penetration Testing, Network Analysis, Forensics & More on one secure drive.",
+      "Advanced Cybersecurity Framework on a 64GB USB. Penetration Testing, Network Analysis, Forensics & More on one secure drive.",
     upiId: UPI_ID_DEFAULT,
     contactEmail: CONTACT_EMAIL_DEFAULT,
     contactPhone: CONTACT_PHONE_DEFAULT,
@@ -139,6 +140,7 @@ interface LegacyOrder {
   pincode: string;
   amount: number;
   status: "Pending" | "Confirmed" | "Paid" | "Shipped" | "Delivered";
+  adminNote?: string;
 }
 
 function getOrders(): LegacyOrder[] {
@@ -160,6 +162,13 @@ function saveOrder(order: LegacyOrder) {
 function updateOrderStatus(orderId: string, status: LegacyOrder["status"]) {
   const orders = getOrders().map((o) =>
     o.id === orderId ? { ...o, status } : o,
+  );
+  localStorage.setItem(ORDER_LIST_KEY, JSON.stringify(orders));
+}
+
+function updateOrderNote(orderId: string, adminNote: string) {
+  const orders = getOrders().map((o) =>
+    o.id === orderId ? { ...o, adminNote } : o,
   );
   localStorage.setItem(ORDER_LIST_KEY, JSON.stringify(orders));
 }
@@ -221,7 +230,7 @@ const TOOL_CATEGORIES = [
 ];
 
 const SPECS = [
-  { label: "Capacity", value: "32GB" },
+  { label: "Capacity", value: "64GB" },
   { label: "Interface", value: "USB 3.2 Gen 2x2" },
   { label: "Read Speed", value: "2000 MB/s" },
   { label: "Write Speed", value: "2500 MB/s" },
@@ -345,7 +354,7 @@ function HomePage() {
               </div>
               <div className="absolute -bottom-3 -right-3 bg-card border border-primary/40 rounded px-3 py-2 font-mono text-xs text-primary shadow-[0_0_12px_oklch(0.70_0.18_142/0.3)]">
                 <HardDrive className="w-3 h-3 inline mr-1" />
-                32GB · USB 3.2 Gen 2
+                64GB · USB 3.2 Gen 2
               </div>
             </motion.div>
           </div>
@@ -1065,7 +1074,7 @@ function PaymentSuccessPage({ search }: { search: SuccessSearch }) {
             {[
               {
                 icon: Package,
-                title: "Hacker's Pendrive 32GB",
+                title: "Hacker's Pendrive 64GB",
                 desc: "Your order will be shipped within 3–5 business days.",
               },
               {
@@ -1604,6 +1613,128 @@ function ComplaintBoxSection() {
   );
 }
 
+// ── Invoice Generator ────────────────────────────────────────────
+
+function openInvoice(order: LegacyOrder) {
+  const orderDate = new Date(order.date).toLocaleDateString("en-IN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const now = new Date();
+  const generatedOn = `${now.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })}, ${now.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  })}`;
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Invoice — ${order.id}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@600;700&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Share Tech Mono', monospace; background: #fff; color: #111; padding: 40px; max-width: 680px; margin: 0 auto; }
+    .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid #22c55e; padding-bottom: 20px; margin-bottom: 28px; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .shield { width: 44px; height: 44px; background: #dcfce7; border: 2px solid #22c55e; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+    .brand-name { font-family: 'Rajdhani', sans-serif; font-size: 26px; font-weight: 700; color: #16a34a; letter-spacing: 2px; text-transform: uppercase; }
+    .brand-tag { font-size: 11px; color: #666; letter-spacing: 1px; }
+    .invoice-label { text-align: right; }
+    .invoice-label h2 { font-size: 22px; font-weight: 700; color: #111; letter-spacing: 4px; text-transform: uppercase; }
+    .invoice-label p { font-size: 12px; color: #555; margin-top: 4px; }
+    .generated-on { font-size: 11px; color: #888; margin-bottom: 18px; }
+    .order-id-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 14px 18px; margin-bottom: 28px; }
+    .order-id-box p { font-size: 11px; color: #555; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+    .order-id-box span { font-size: 20px; font-weight: 700; color: #16a34a; letter-spacing: 2px; }
+    .section-title { font-size: 11px; color: #888; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 10px; border-bottom: 1px solid #e5e7eb; padding-bottom: 6px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px; margin-bottom: 28px; }
+    .field label { font-size: 10px; color: #888; letter-spacing: 1px; text-transform: uppercase; }
+    .field p { font-size: 14px; color: #111; margin-top: 2px; font-weight: 500; }
+    .amount-box { background: #f0fdf4; border: 2px solid #22c55e; border-radius: 8px; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; }
+    .amount-box span { font-size: 12px; color: #555; letter-spacing: 1px; text-transform: uppercase; }
+    .amount-box strong { font-size: 28px; color: #16a34a; font-weight: 700; letter-spacing: 1px; }
+    .signature-section { display: flex; flex-direction: column; align-items: flex-end; margin-bottom: 28px; padding-top: 8px; }
+    .signature-section img { max-width: 150px; max-height: 70px; object-fit: contain; margin-bottom: 6px; }
+    .signature-section p { font-size: 11px; color: #555; letter-spacing: 1px; text-transform: uppercase; border-top: 1px solid #d1fae5; padding-top: 4px; min-width: 150px; text-align: center; }
+    .footer { border-top: 1px solid #e5e7eb; padding-top: 16px; font-size: 11px; color: #888; text-align: center; }
+    .footer a { color: #16a34a; text-decoration: none; }
+    .status-badge { display: inline-block; background: #dcfce7; color: #16a34a; border: 1px solid #bbf7d0; border-radius: 4px; padding: 2px 8px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; margin-top: 4px; }
+    @media print {
+      body { padding: 20px; }
+      button { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      <img src="${window.location.origin}/assets/gs-store-logo.png" alt="GS STORE Logo" style="max-height:64px;max-width:80px;object-fit:contain;border-radius:8px;" />
+      <div>
+        <div class="brand-name">GS STORE</div>
+        <div class="brand-tag">Cybersecurity Tools</div>
+      </div>
+    </div>
+    <div class="invoice-label">
+      <h2>Invoice</h2>
+      <p>Order Date: ${orderDate}</p>
+    </div>
+  </div>
+
+  <p class="generated-on">Generated on: ${generatedOn}</p>
+
+  <div class="order-id-box">
+    <p>Order ID</p>
+    <span>${order.id}</span>
+    <span class="status-badge" style="margin-left:12px">${order.status}</span>
+  </div>
+
+  <p class="section-title">Customer Details</p>
+  <div class="grid">
+    <div class="field"><label>Name</label><p>${order.name}</p></div>
+    <div class="field"><label>Email</label><p>${order.email}</p></div>
+    <div class="field"><label>Phone</label><p>${order.phone}</p></div>
+    <div class="field"><label>City / State</label><p>${order.city}, ${order.state}</p></div>
+    <div class="field" style="grid-column:span 2"><label>Delivery Address</label><p>${order.address}, ${order.city}, ${order.state} – ${order.pincode}</p></div>
+  </div>
+
+  <p class="section-title">Order Details</p>
+  <div class="grid" style="margin-bottom:16px">
+    <div class="field"><label>Product</label><p>Hacker's Pendrive 64GB</p></div>
+    <div class="field"><label>Quantity</label><p>1</p></div>
+    <div class="field"><label>Payment Method</label><p>UPI</p></div>
+    <div class="field"><label>UPI ID</label><p>gauravsaswade03@okaxis</p></div>
+  </div>
+
+  <div class="amount-box">
+    <span>Amount Paid</span>
+    <strong>₹${order.amount.toLocaleString("en-IN")}</strong>
+  </div>
+
+  <div class="signature-section">
+    <img src="${window.location.origin}/assets/signature.jpg" alt="Authorized Signature" />
+    <p>Authorized Signature</p>
+  </div>
+
+  <div class="footer">
+    <p><strong>GS STORE</strong> &nbsp;|&nbsp; gauravsaswade2009@gmail.com &nbsp;|&nbsp; +91 9270556455</p>
+    <p style="margin-top:6px">Thank you for your purchase! For support, contact us at the email above.</p>
+  </div>
+
+  <script>window.onload = function() { window.print(); };<\/script>
+</body>
+</html>`;
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank");
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
 // ── Order Tracking Page ─────────────────────────────────────────
 
 interface OrdersSearch {
@@ -1809,6 +1940,35 @@ function OrderTrackingPage({ search }: { search: OrdersSearch }) {
                   })}
                 </div>
               </div>
+
+              {/* Download Invoice Button */}
+              <Button
+                onClick={() => openInvoice(found)}
+                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-display font-bold tracking-widest uppercase glow-accent transition-smooth"
+                data-ocid="track-download-invoice"
+              >
+                <Download className="w-4 h-4 mr-2" /> Download / Print Invoice
+              </Button>
+
+              {/* Admin Note */}
+              {found.adminNote && (
+                <motion.div
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="bg-primary/5 border border-primary/40 rounded-lg p-4 flex gap-3"
+                  data-ocid="track-admin-note"
+                >
+                  <MessageCircle className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-mono text-primary uppercase tracking-widest mb-1 font-bold">
+                      Message from GS STORE
+                    </p>
+                    <p className="text-sm text-foreground leading-relaxed">
+                      {found.adminNote}
+                    </p>
+                  </div>
+                </motion.div>
+              )}
             </motion.div>
           )}
         </div>
@@ -1817,204 +1977,505 @@ function OrderTrackingPage({ search }: { search: OrdersSearch }) {
   );
 }
 
-// ── Customer Login / My Orders Page ────────────────────────────
+// ── Profile Screenshot Storage Key ──────────────────────────────
+const PAYMENT_SCREENSHOT_KEY = "payment-screenshot";
+
+// ── Helper: load customer account ───────────────────────────────
+function loadCustomerAccount(
+  customerId: string,
+  fallbackName: string,
+  fallbackEmail: string,
+): CustomerAccount {
+  try {
+    const accounts = JSON.parse(
+      localStorage.getItem("customer-accounts") ?? "[]",
+    ) as CustomerAccount[];
+    const found = accounts.find((a) => a.id === customerId);
+    if (found) return found;
+  } catch {
+    /* ignore */
+  }
+  return {
+    id: customerId,
+    name: fallbackName,
+    email: fallbackEmail,
+    passwordHash: "",
+    phone: "",
+    address: "",
+    city: "",
+    state: "",
+    pincode: "",
+    createdAt: new Date().toISOString(),
+  };
+}
+
+// ── Customer Profile Page ────────────────────────────────────────
 
 function CustomerPage() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
-  const [submitted, setSubmitted] = useState(false);
-  const [orders, setOrders] = useState<LegacyOrder[]>([]);
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    const all = getOrders();
-    const matched = all.filter(
-      (o) => o.email.toLowerCase() === email.trim().toLowerCase(),
-    );
-    setOrders(matched);
-    setSubmitted(true);
+  // Load session synchronously (safe for initial state)
+  const getSession = () => {
+    try {
+      const s =
+        sessionStorage.getItem(CUSTOMER_AUTH_KEY) ||
+        localStorage.getItem(CUSTOMER_AUTH_KEY);
+      if (s)
+        return JSON.parse(s) as {
+          customerId: string;
+          email: string;
+          name: string;
+        };
+    } catch {
+      /* ignore */
+    }
+    return null;
   };
+
+  const [session] = useState(getSession);
+
+  const getInitialForm = () => {
+    const sess = getSession();
+    if (!sess)
+      return {
+        name: "",
+        email: "",
+        phone: "",
+        address: "",
+        city: "",
+        state: "",
+        pincode: "",
+      };
+    const acc = loadCustomerAccount(sess.customerId, sess.name, sess.email);
+    return {
+      name: acc.name,
+      email: acc.email,
+      phone: acc.phone ?? "",
+      address: acc.address ?? "",
+      city: acc.city ?? "",
+      state: acc.state ?? "",
+      pincode: acc.pincode ?? "",
+    };
+  };
+
+  const [form, setForm] = useState(getInitialForm);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Payment screenshot
+  const [paymentScreenshot] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(PAYMENT_SCREENSHOT_KEY);
+    } catch {
+      return null;
+    }
+  });
+
+  // Order history filtered by current customer's email
+  const [customerOrders] = useState<LegacyOrder[]>(() => {
+    const sess = getSession();
+    if (!sess) return [];
+    return getOrders()
+      .filter((o) => o.email.toLowerCase() === sess.email.toLowerCase())
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  });
+
+  // No session — show login prompt
+  if (!session) {
+    return (
+      <Layout>
+        <section className="container mx-auto px-4 py-24 max-w-sm text-center">
+          <User className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
+          <p className="font-display font-bold text-foreground mb-2">
+            Not logged in
+          </p>
+          <p className="text-sm text-muted-foreground mb-6">
+            You need to be logged in to view your profile.
+          </p>
+          <Button
+            className="bg-primary text-primary-foreground hover:bg-primary/90 glow-accent font-display font-bold tracking-widest uppercase"
+            onClick={() => navigate({ to: "/login" })}
+          >
+            Login
+          </Button>
+        </section>
+      </Layout>
+    );
+  }
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSaved(false);
+    setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
+  };
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const accounts = JSON.parse(
+        localStorage.getItem(CUSTOMER_ACCOUNTS_KEY) ?? "[]",
+      ) as CustomerAccount[];
+      const idx = accounts.findIndex((a) => a.id === session.customerId);
+      const current = loadCustomerAccount(
+        session.customerId,
+        session.name,
+        session.email,
+      );
+      const updated: CustomerAccount = {
+        ...current,
+        name: form.name.trim(),
+        email: form.email.trim().toLowerCase(),
+        phone: form.phone.trim(),
+        address: form.address.trim(),
+        city: form.city.trim(),
+        state: form.state.trim(),
+        pincode: form.pincode.trim(),
+      };
+      if (idx >= 0) accounts[idx] = updated;
+      else accounts.push(updated);
+      localStorage.setItem(CUSTOMER_ACCOUNTS_KEY, JSON.stringify(accounts));
+
+      const newSession = {
+        customerId: session.customerId,
+        email: updated.email,
+        name: updated.name,
+      };
+      sessionStorage.setItem(CUSTOMER_AUTH_KEY, JSON.stringify(newSession));
+      localStorage.setItem(CUSTOMER_AUTH_KEY, JSON.stringify(newSession));
+
+      setTimeout(() => {
+        setSaving(false);
+        setSaved(true);
+        toast.success("Profile updated successfully!");
+      }, 400);
+    } catch {
+      setSaving(false);
+      toast.error("Failed to save profile.");
+    }
+  };
+
+  const isValid = form.name.trim() && form.email.trim();
+
+  const PROFILE_FIELDS = [
+    {
+      id: "profile-name",
+      name: "name",
+      label: "Full Name",
+      type: "text",
+      placeholder: "Your full name",
+      value: form.name,
+    },
+    {
+      id: "profile-email",
+      name: "email",
+      label: "Email Address",
+      type: "email",
+      placeholder: "your@email.com",
+      value: form.email,
+    },
+    {
+      id: "profile-phone",
+      name: "phone",
+      label: "Phone",
+      type: "tel",
+      placeholder: "+91 XXXXX XXXXX",
+      value: form.phone,
+    },
+    {
+      id: "profile-address",
+      name: "address",
+      label: "Address",
+      type: "text",
+      placeholder: "Flat/House no, Street, Area",
+      value: form.address,
+    },
+    {
+      id: "profile-city",
+      name: "city",
+      label: "City",
+      type: "text",
+      placeholder: "City",
+      value: form.city,
+    },
+    {
+      id: "profile-state",
+      name: "state",
+      label: "State",
+      type: "text",
+      placeholder: "State",
+      value: form.state,
+    },
+    {
+      id: "profile-pincode",
+      name: "pincode",
+      label: "Pincode",
+      type: "text",
+      placeholder: "6-digit pincode",
+      value: form.pincode,
+    },
+  ];
 
   return (
     <Layout>
-      <section className="bg-card border-b border-border py-14">
+      <section className="bg-card border-b border-border py-12">
         <div className="container mx-auto px-4 text-center">
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            <h1 className="font-display font-black text-4xl lg:text-5xl text-foreground uppercase tracking-tight mb-3">
-              My <span className="text-primary">Orders</span>
+            <div className="w-14 h-14 rounded-full bg-primary/10 border-2 border-primary/40 flex items-center justify-center mx-auto mb-4 shadow-[0_0_20px_oklch(0.70_0.18_142/0.2)]">
+              <User className="w-7 h-7 text-primary" />
+            </div>
+            <h1 className="font-display font-black text-4xl lg:text-5xl text-foreground uppercase tracking-tight mb-2">
+              My <span className="text-primary">Profile</span>
             </h1>
-            <p className="text-muted-foreground font-body max-w-md mx-auto">
-              Enter the email you used at checkout to view all your orders.
+            <p className="text-muted-foreground font-body text-sm max-w-xs mx-auto">
+              Manage your account details and view your payment screenshot.
             </p>
           </motion.div>
         </div>
       </section>
-      <section className="bg-background py-16">
-        <div className="container mx-auto px-4 max-w-xl">
-          {!submitted ? (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
+
+      <section className="bg-background py-12">
+        <div className="container mx-auto px-4 max-w-2xl flex flex-col gap-8">
+          {/* Profile Edit Form */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            <form
+              onSubmit={handleSave}
+              className="bg-card border border-border rounded-lg p-6 flex flex-col gap-5"
+              data-ocid="profile-edit-form"
             >
-              <div className="flex flex-col items-center gap-6 mb-8">
-                <div className="w-16 h-16 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center">
-                  <User className="w-8 h-8 text-primary" />
+              <div className="flex items-center gap-3 border-b border-border pb-4 mb-1">
+                <div className="w-8 h-8 rounded bg-primary/10 border border-primary/30 flex items-center justify-center">
+                  <Settings className="w-4 h-4 text-primary" />
                 </div>
-                <p className="text-muted-foreground text-sm text-center font-body">
-                  Login with your email to view your order history and track
-                  deliveries.
-                </p>
+                <h2 className="font-display font-bold text-lg text-foreground uppercase tracking-wide">
+                  Edit Profile
+                </h2>
               </div>
-              <form
-                onSubmit={handleLogin}
-                className="bg-card border border-border rounded-lg p-6 flex flex-col gap-4"
-              >
-                <div className="flex flex-col gap-1.5">
-                  <Label
-                    htmlFor="customer-email"
-                    className="text-xs font-mono text-muted-foreground tracking-wider uppercase"
+
+              <div className="grid sm:grid-cols-2 gap-4">
+                {PROFILE_FIELDS.slice(0, 4).map((f) => (
+                  <div
+                    key={f.id}
+                    className={f.name === "address" ? "sm:col-span-2" : ""}
                   >
-                    Email Address
-                  </Label>
-                  <Input
-                    id="customer-email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="your@email.com"
-                    required
-                    className="bg-background border-border focus:border-primary"
-                    data-ocid="customer-email-input"
-                  />
-                </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label
+                        htmlFor={f.id}
+                        className="text-xs font-mono text-muted-foreground tracking-wider uppercase"
+                      >
+                        {f.label}
+                      </Label>
+                      <Input
+                        id={f.id}
+                        name={f.name}
+                        type={f.type}
+                        value={f.value}
+                        onChange={handleChange}
+                        placeholder={f.placeholder}
+                        className="bg-background border-border focus:border-primary"
+                        data-ocid={f.id}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                {PROFILE_FIELDS.slice(4).map((f) => (
+                  <div key={f.id} className="flex flex-col gap-1.5">
+                    <Label
+                      htmlFor={f.id}
+                      className="text-xs font-mono text-muted-foreground tracking-wider uppercase"
+                    >
+                      {f.label}
+                    </Label>
+                    <Input
+                      id={f.id}
+                      name={f.name}
+                      type={f.type}
+                      value={f.value}
+                      onChange={handleChange}
+                      placeholder={f.placeholder}
+                      className="bg-background border-border focus:border-primary"
+                      data-ocid={f.id}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-3 pt-1">
                 <Button
                   type="submit"
-                  className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-display font-bold tracking-widest uppercase glow-accent transition-smooth"
-                  data-ocid="customer-login-btn"
+                  disabled={!isValid || saving}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 font-display font-bold tracking-widest uppercase glow-accent transition-smooth disabled:opacity-50"
+                  data-ocid="profile-save-btn"
                 >
-                  <User className="w-4 h-4 mr-2" /> View My Orders
+                  {saving ? "Saving…" : "Save Changes"}
                 </Button>
-              </form>
-              <p className="text-center text-xs text-muted-foreground mt-4">
-                Want to track a specific order?{" "}
-                <button
-                  type="button"
-                  onClick={() => navigate({ to: "/orders" })}
-                  className="text-primary hover:underline"
-                >
-                  Use Order Tracking →
-                </button>
-              </p>
-            </motion.div>
-          ) : orders.length === 0 ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex flex-col items-center gap-5 py-10 text-center"
-              data-ocid="customer-no-orders"
+                {saved && (
+                  <motion.span
+                    initial={{ opacity: 0, x: -6 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="flex items-center gap-1.5 text-sm text-primary font-mono"
+                  >
+                    <CheckCircle className="w-4 h-4" /> Saved!
+                  </motion.span>
+                )}
+              </div>
+            </form>
+          </motion.div>
+
+          {/* Quick Actions */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.15 }}
+            className="grid sm:grid-cols-2 gap-3"
+          >
+            <button
+              type="button"
+              onClick={() => navigate({ to: "/orders" })}
+              className="flex items-center gap-3 bg-card border border-border rounded-lg p-4 hover:border-primary/50 transition-smooth text-left group"
+              data-ocid="profile-track-order-btn"
             >
-              <PackageSearch className="w-14 h-14 text-muted-foreground/30" />
+              <PackageSearch className="w-5 h-5 text-primary shrink-0" />
               <div>
-                <p className="font-display font-bold text-foreground mb-1">
-                  No orders found
+                <p className="font-display font-bold text-sm text-foreground">
+                  Track Order
                 </p>
-                <p className="text-sm text-muted-foreground">
-                  No orders were found for{" "}
-                  <span className="text-foreground font-semibold">{email}</span>
-                  .
+                <p className="text-xs text-muted-foreground">
+                  Search by Order ID + email
                 </p>
               </div>
-              <Button
-                variant="outline"
-                className="border-primary/40 text-primary hover:bg-primary/10"
-                onClick={() => setSubmitted(false)}
-                data-ocid="customer-retry-btn"
-              >
-                Try Another Email
-              </Button>
-            </motion.div>
-          ) : (
+              <ChevronRight className="w-4 h-4 text-muted-foreground ml-auto group-hover:text-primary transition-smooth" />
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate({ to: "/complaints" })}
+              className="flex items-center gap-3 bg-card border border-border rounded-lg p-4 hover:border-primary/50 transition-smooth text-left group"
+              data-ocid="profile-complaint-btn"
+            >
+              <AlertTriangle className="w-5 h-5 text-primary shrink-0" />
+              <div>
+                <p className="font-display font-bold text-sm text-foreground">
+                  Complaint Box
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Submit an issue or feedback
+                </p>
+              </div>
+              <ChevronRight className="w-4 h-4 text-muted-foreground ml-auto group-hover:text-primary transition-smooth" />
+            </button>
+          </motion.div>
+
+          {/* Payment Screenshot */}
+          {paymentScreenshot && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="flex flex-col gap-4"
+              transition={{ delay: 0.25 }}
+              className="bg-card border border-primary/20 rounded-lg p-6 flex flex-col gap-4"
+              data-ocid="profile-payment-screenshot"
             >
-              <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 border-b border-border pb-4">
+                <div className="w-8 h-8 rounded bg-primary/10 border border-primary/30 flex items-center justify-center">
+                  <ShieldCheck className="w-4 h-4 text-primary" />
+                </div>
                 <div>
-                  <p className="font-display font-bold text-foreground">
-                    {orders.length} order{orders.length !== 1 ? "s" : ""} found
+                  <h3 className="font-display font-bold text-base text-foreground uppercase tracking-wide">
+                    Payment Screenshot
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Your payment proof — press and hold on mobile to save, or
+                    right-click on desktop.
                   </p>
-                  <p className="text-xs text-muted-foreground">{email}</p>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-border text-muted-foreground hover:text-primary hover:border-primary/40 text-xs"
-                  onClick={() => setSubmitted(false)}
-                >
-                  Change Email
-                </Button>
               </div>
-              {orders.reverse().map((order) => (
-                <div
-                  key={order.id}
-                  className="bg-card border border-border rounded-lg p-5 hover:border-primary/40 transition-smooth"
-                  data-ocid={`customer-order-${order.id}`}
-                >
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div>
-                      <p className="font-mono text-xs text-muted-foreground mb-0.5">
-                        Order ID
-                      </p>
-                      <p className="font-mono font-black text-primary text-sm">
-                        {order.id}
-                      </p>
-                    </div>
-                    <StatusBadge status={order.status} />
-                  </div>
-                  <Separator className="my-3" />
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <p className="text-muted-foreground">Date</p>
-                      <p className="text-foreground">
-                        {new Date(order.date).toLocaleDateString("en-IN")}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Amount</p>
-                      <p className="font-mono font-bold text-primary">
-                        ₹{order.amount.toLocaleString("en-IN")}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Delivery To</p>
-                      <p className="text-foreground">
-                        {order.city}, {order.state}
-                      </p>
-                    </div>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-3 border-primary/30 text-primary hover:bg-primary/10 text-xs w-full"
-                    onClick={() =>
-                      navigate({
-                        to: "/orders",
-                        search: { orderId: order.id, email: order.email },
-                      })
-                    }
-                    data-ocid={`customer-track-${order.id}`}
-                  >
-                    <PackageSearch className="w-3.5 h-3.5 mr-1" /> Track This
-                    Order
-                  </Button>
-                </div>
-              ))}
+              <div className="flex justify-center">
+                <img
+                  src={paymentScreenshot}
+                  alt="Payment screenshot"
+                  className="max-w-full max-h-96 rounded-lg border border-primary/30 shadow-[0_0_20px_oklch(0.70_0.18_142/0.15)]"
+                />
+              </div>
+              <p className="text-xs text-center text-muted-foreground">
+                <span className="text-primary font-semibold">Tip:</span>{" "}
+                Long-press (mobile) or right-click (desktop) on the image to
+                save or share.
+              </p>
             </motion.div>
           )}
+
+          {/* Order History */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="bg-card border border-border rounded-lg p-6 flex flex-col gap-4"
+            data-ocid="profile-order-history"
+          >
+            <div className="flex items-center gap-3 border-b border-border pb-4">
+              <div className="w-8 h-8 rounded bg-primary/10 border border-primary/30 flex items-center justify-center">
+                <ClipboardList className="w-4 h-4 text-primary" />
+              </div>
+              <h3 className="font-display font-bold text-base text-foreground uppercase tracking-wide">
+                Order History
+              </h3>
+            </div>
+            {customerOrders.length === 0 ? (
+              <div
+                className="flex flex-col items-center gap-2 py-6 text-center"
+                data-ocid="profile-no-orders"
+              >
+                <PackageSearch className="w-10 h-10 text-muted-foreground/20" />
+                <p className="text-sm font-mono text-muted-foreground">
+                  No orders yet.
+                </p>
+                <Button
+                  variant="outline"
+                  className="border-primary/40 text-primary hover:bg-primary/10 font-mono text-xs mt-1"
+                  onClick={() => navigate({ to: "/" })}
+                >
+                  Shop Now
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {customerOrders.map((o) => (
+                  <div
+                    key={o.id}
+                    className="flex items-center justify-between gap-3 p-3 rounded-lg bg-background border border-border hover:border-primary/30 transition-smooth"
+                    data-ocid={`profile-order-${o.id}`}
+                  >
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                      <p className="font-mono font-bold text-primary text-xs truncate">
+                        {o.id}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(o.date).toLocaleDateString("en-IN", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <StatusBadge status={o.status} />
+                      <span className="font-mono font-bold text-primary text-sm">
+                        ₹{o.amount.toLocaleString("en-IN")}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </motion.div>
         </div>
       </section>
     </Layout>
@@ -2032,6 +2493,10 @@ interface CustomerAccount {
   email: string;
   passwordHash: string;
   phone: string;
+  address: string;
+  city: string;
+  state: string;
+  pincode: string;
   createdAt: string;
 }
 
@@ -2241,6 +2706,10 @@ function SignupPage() {
       email: form.email.trim().toLowerCase(),
       passwordHash: simpleHash(form.password),
       phone: form.phone.trim(),
+      address: "",
+      city: "",
+      state: "",
+      pincode: "",
       createdAt: new Date().toISOString(),
     };
     setTimeout(() => {
@@ -2480,7 +2949,9 @@ type AdminSection =
   | "product"
   | "settings"
   | "orders"
-  | "complaints";
+  | "complaints"
+  | "invoices"
+  | "credentials";
 
 const ADMIN_NAV: {
   id: AdminSection;
@@ -2492,6 +2963,8 @@ const ADMIN_NAV: {
   { id: "settings", label: "Website Settings", icon: Settings },
   { id: "orders", label: "Orders", icon: ClipboardList },
   { id: "complaints", label: "Complaints", icon: MessageSquareWarning },
+  { id: "invoices", label: "Invoices", icon: Download },
+  { id: "credentials", label: "Credentials", icon: KeyRound },
 ];
 
 // ── Admin: Overview Section ──────────────────────────────────────
@@ -3045,11 +3518,19 @@ function AdminOrders() {
     getOrders().reverse(),
   );
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+  const [noteInputs, setNoteInputs] = useState<Record<string, string>>({});
 
   const handleStatusUpdate = (id: string, status: LegacyOrder["status"]) => {
     updateOrderStatus(id, status);
     setOrders(getOrders().reverse());
     toast.success(`Order status updated to ${status}`);
+  };
+
+  const handleSaveNote = (id: string) => {
+    const note = noteInputs[id] ?? "";
+    updateOrderNote(id, note.trim());
+    setOrders(getOrders().reverse());
+    toast.success("Note saved!");
   };
 
   const exportCSV = () => {
@@ -3228,7 +3709,7 @@ function AdminOrders() {
                         {isExpanded && (
                           <tr className="bg-primary/5 border-b border-primary/20">
                             <td colSpan={8} className="px-6 py-4">
-                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs mb-4">
                                 {[
                                   { label: "Full Order ID", value: o.id },
                                   { label: "Phone", value: o.phone },
@@ -3254,6 +3735,43 @@ function AdminOrders() {
                                     </p>
                                   </div>
                                 ))}
+                              </div>
+                              {/* Admin Note */}
+                              <div className="flex flex-col gap-2 border-t border-primary/20 pt-3">
+                                <p className="text-xs font-mono text-primary uppercase tracking-widest">
+                                  Send Note to Customer
+                                </p>
+                                {o.adminNote && (
+                                  <p className="text-xs text-muted-foreground italic">
+                                    Current: {o.adminNote}
+                                  </p>
+                                )}
+                                <div className="flex gap-2">
+                                  <input
+                                    type="text"
+                                    value={
+                                      noteInputs[o.id] ?? o.adminNote ?? ""
+                                    }
+                                    onChange={(e) =>
+                                      setNoteInputs((prev) => ({
+                                        ...prev,
+                                        [o.id]: e.target.value,
+                                      }))
+                                    }
+                                    placeholder="Type a message for the customer..."
+                                    className="flex-1 bg-background border border-border rounded text-xs font-mono text-foreground px-3 py-1.5 focus:border-primary focus:outline-none"
+                                    data-ocid={`admin-note-input-${o.id}`}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveNote(o.id)}
+                                    className="px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest transition-colors bg-primary text-primary-foreground hover:bg-primary/90"
+                                    data-ocid={`admin-note-save-${o.id}`}
+                                  >
+                                    <Send className="w-3 h-3 mr-1 inline" />
+                                    Send
+                                  </button>
+                                </div>
                               </div>
                             </td>
                           </tr>
@@ -3339,6 +3857,40 @@ function AdminOrders() {
                       </option>
                     ))}
                   </select>
+                </div>
+                {/* Admin Note - Mobile */}
+                <div className="flex flex-col gap-2 border-t border-border pt-3 mt-3">
+                  <p className="text-xs font-mono text-primary uppercase tracking-widest">
+                    Send Note to Customer
+                  </p>
+                  {o.adminNote && (
+                    <p className="text-xs text-muted-foreground italic">
+                      Current: {o.adminNote}
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={noteInputs[o.id] ?? o.adminNote ?? ""}
+                      onChange={(e) =>
+                        setNoteInputs((prev) => ({
+                          ...prev,
+                          [o.id]: e.target.value,
+                        }))
+                      }
+                      placeholder="Type a message..."
+                      className="flex-1 bg-background border border-border rounded text-xs font-mono text-foreground px-2 py-1.5 focus:border-primary focus:outline-none"
+                      data-ocid={`admin-note-input-mobile-${o.id}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleSaveNote(o.id)}
+                      className="px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                      data-ocid={`admin-note-save-mobile-${o.id}`}
+                    >
+                      <Send className="w-3 h-3 inline" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -3478,6 +4030,777 @@ function AdminComplaints() {
             </div>
           ))}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── Admin: Invoices Section ─────────────────────────────────────
+
+function AdminInvoices() {
+  const [orders, setOrders] = useState<LegacyOrder[]>(() =>
+    getOrders().slice().reverse(),
+  );
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [selectedOrderId, setSelectedOrderId] = useState<string>("");
+
+  const refresh = () => {
+    const refreshed = getOrders().slice().reverse();
+    setOrders(refreshed);
+    if (!selectedOrderId && refreshed.length > 0) {
+      setSelectedOrderId(refreshed[0].id);
+    }
+  };
+
+  const handleCreateInvoice = () => {
+    const order = orders.find((o) => o.id === selectedOrderId);
+    if (order) {
+      openInvoice(order);
+      setShowCreateModal(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Create Invoice Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+          <div
+            className="rounded-lg border p-6 flex flex-col gap-4 w-full max-w-md mx-4"
+            style={{ background: "#0a0f0a", borderColor: "#00ff4155" }}
+          >
+            <div className="flex items-center justify-between">
+              <h3
+                className="font-display font-black text-lg uppercase tracking-tight"
+                style={{ color: "#00ff41" }}
+              >
+                Create Invoice
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                style={{ color: "#00ff4199" }}
+                className="hover:opacity-70 transition-opacity"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label
+                htmlFor="create-invoice-order-select"
+                className="text-xs font-mono uppercase tracking-widest"
+                style={{ color: "#00ff4199" }}
+              >
+                Select Order
+              </label>
+              {orders.length === 0 ? (
+                <p className="text-xs font-mono" style={{ color: "#00ff4166" }}>
+                  No orders available.
+                </p>
+              ) : (
+                <select
+                  id="create-invoice-order-select"
+                  value={selectedOrderId}
+                  onChange={(e) => setSelectedOrderId(e.target.value)}
+                  className="w-full rounded px-3 py-2 text-xs font-mono focus:outline-none"
+                  style={{
+                    background: "#0f1a0f",
+                    border: "1px solid #00ff4155",
+                    color: "#00ff41",
+                  }}
+                  data-ocid="admin-create-invoice-select"
+                >
+                  {orders.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.id} — {o.name} (₹{o.amount.toLocaleString("en-IN")})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <div className="flex gap-3 pt-1">
+              <button
+                type="button"
+                onClick={handleCreateInvoice}
+                disabled={!selectedOrderId}
+                className="flex-1 py-2 rounded text-xs font-bold uppercase tracking-widest transition-colors disabled:opacity-40"
+                style={{
+                  background: "#00ff41",
+                  color: "#0a0f0a",
+                }}
+                data-ocid="admin-generate-invoice-btn"
+              >
+                <Download className="w-3.5 h-3.5 mr-1 inline" />
+                Generate Invoice
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                className="px-4 py-2 rounded text-xs font-mono uppercase tracking-widest transition-colors"
+                style={{
+                  border: "1px solid #00ff4155",
+                  color: "#00ff4199",
+                  background: "transparent",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h2
+            className="font-display font-black text-2xl uppercase tracking-tight mb-1"
+            style={{ color: "#00ff41" }}
+          >
+            Invoices
+          </h2>
+          <p className="text-sm font-mono" style={{ color: "#00ff4199" }}>
+            {orders.length} invoice{orders.length !== 1 ? "s" : ""} — click
+            "View Invoice" to open &amp; print.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              const refreshed = getOrders().slice().reverse();
+              setOrders(refreshed);
+              if (refreshed.length > 0) setSelectedOrderId(refreshed[0].id);
+              setShowCreateModal(true);
+            }}
+            className="px-4 py-2 rounded text-xs font-bold uppercase tracking-widest transition-colors"
+            style={{
+              background: "#00ff41",
+              color: "#0a0f0a",
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.opacity = "0.85";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.opacity = "1";
+            }}
+            data-ocid="admin-create-invoice-open"
+          >
+            <Plus className="w-3.5 h-3.5 mr-1 inline" />
+            Create Invoice
+          </button>
+          <Button
+            onClick={refresh}
+            variant="outline"
+            className="shrink-0 font-mono text-xs"
+            style={{
+              borderColor: "#00ff4155",
+              color: "#00ff41",
+              background: "transparent",
+            }}
+            data-ocid="admin-invoices-refresh"
+          >
+            Refresh
+          </Button>
+        </div>
+      </div>
+
+      {orders.length === 0 ? (
+        <div
+          className="rounded-lg border p-12 flex flex-col items-center gap-4 text-center"
+          style={{ borderColor: "#00ff4133", background: "#00ff410a" }}
+          data-ocid="admin-invoices-empty"
+        >
+          <Download className="w-10 h-10" style={{ color: "#00ff4166" }} />
+          <p
+            className="font-mono text-sm font-bold uppercase tracking-widest"
+            style={{ color: "#00ff41" }}
+          >
+            No Invoices Found
+          </p>
+          <p className="font-mono text-xs" style={{ color: "#00ff4166" }}>
+            Orders placed by customers will appear here.
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* Desktop table */}
+          <div
+            className="hidden md:block rounded-lg border overflow-hidden"
+            style={{ borderColor: "#00ff4133" }}
+          >
+            <table className="w-full text-sm font-mono">
+              <thead>
+                <tr
+                  style={{
+                    background: "#00ff410f",
+                    borderBottom: "1px solid #00ff4133",
+                  }}
+                >
+                  {[
+                    "Order ID",
+                    "Customer",
+                    "Email",
+                    "Amount",
+                    "Date",
+                    "Status",
+                    "Action",
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      className="text-left px-4 py-3 text-xs uppercase tracking-widest font-bold"
+                      style={{ color: "#00ff41" }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map((order, i) => (
+                  <tr
+                    key={order.id}
+                    className="transition-colors"
+                    style={{
+                      borderBottom: "1px solid #00ff4120",
+                      background: i % 2 === 0 ? "transparent" : "#00ff4106",
+                    }}
+                    data-ocid={`admin-invoice-row-${i}`}
+                  >
+                    <td
+                      className="px-4 py-3 font-bold"
+                      style={{ color: "#00ff41" }}
+                    >
+                      {order.id}
+                    </td>
+                    <td className="px-4 py-3" style={{ color: "#c6ffd0" }}>
+                      {order.name}
+                    </td>
+                    <td
+                      className="px-4 py-3 text-xs"
+                      style={{ color: "#8aff8a99" }}
+                    >
+                      {order.email}
+                    </td>
+                    <td
+                      className="px-4 py-3 font-bold"
+                      style={{ color: "#00ff41" }}
+                    >
+                      ₹{order.amount.toLocaleString("en-IN")}
+                    </td>
+                    <td
+                      className="px-4 py-3 text-xs"
+                      style={{ color: "#8aff8a99" }}
+                    >
+                      {new Date(order.date).toLocaleDateString("en-IN")}
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={order.status} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => openInvoice(order)}
+                        className="px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest transition-colors"
+                        style={{
+                          border: "1px solid #00ff41",
+                          color: "#00ff41",
+                          background: "transparent",
+                        }}
+                        onMouseEnter={(e) => {
+                          (
+                            e.currentTarget as HTMLButtonElement
+                          ).style.background = "#00ff4122";
+                        }}
+                        onMouseLeave={(e) => {
+                          (
+                            e.currentTarget as HTMLButtonElement
+                          ).style.background = "transparent";
+                        }}
+                        data-ocid={`admin-view-invoice-${i}`}
+                      >
+                        View Invoice
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile cards */}
+          <div className="flex flex-col gap-3 md:hidden">
+            {orders.map((order, i) => (
+              <div
+                key={order.id}
+                className="rounded-lg border p-4 flex flex-col gap-3"
+                style={{ borderColor: "#00ff4133", background: "#00ff410a" }}
+                data-ocid={`admin-invoice-card-${i}`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className="font-mono font-bold text-sm"
+                    style={{ color: "#00ff41" }}
+                  >
+                    {order.id}
+                  </span>
+                  <StatusBadge status={order.status} />
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                  <div>
+                    <div
+                      style={{ color: "#00ff4166" }}
+                      className="uppercase tracking-widest text-[10px]"
+                    >
+                      Customer
+                    </div>
+                    <div style={{ color: "#c6ffd0" }}>{order.name}</div>
+                  </div>
+                  <div>
+                    <div
+                      style={{ color: "#00ff4166" }}
+                      className="uppercase tracking-widest text-[10px]"
+                    >
+                      Amount
+                    </div>
+                    <div className="font-bold" style={{ color: "#00ff41" }}>
+                      ₹{order.amount.toLocaleString("en-IN")}
+                    </div>
+                  </div>
+                  <div>
+                    <div
+                      style={{ color: "#00ff4166" }}
+                      className="uppercase tracking-widest text-[10px]"
+                    >
+                      Date
+                    </div>
+                    <div style={{ color: "#8aff8a99" }}>
+                      {new Date(order.date).toLocaleDateString("en-IN")}
+                    </div>
+                  </div>
+                  <div>
+                    <div
+                      style={{ color: "#00ff4166" }}
+                      className="uppercase tracking-widest text-[10px]"
+                    >
+                      Email
+                    </div>
+                    <div className="truncate" style={{ color: "#8aff8a99" }}>
+                      {order.email}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openInvoice(order)}
+                  className="w-full py-2 rounded text-xs font-bold uppercase tracking-widest transition-colors"
+                  style={{
+                    border: "1px solid #00ff41",
+                    color: "#00ff41",
+                    background: "transparent",
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.background =
+                      "#00ff4122";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.background =
+                      "transparent";
+                  }}
+                  data-ocid={`admin-view-invoice-mobile-${i}`}
+                >
+                  View Invoice
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Admin: Credentials Section ───────────────────────────────────
+
+function AdminCredentials() {
+  const [accounts, setAccounts] = useState<CustomerAccount[]>(() =>
+    getCustomerAccounts()
+      .slice()
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      ),
+  );
+  const [query, setQuery] = useState("");
+  const [copiedEmail, setCopiedEmail] = useState<string | null>(null);
+
+  const refresh = () => {
+    setAccounts(
+      getCustomerAccounts()
+        .slice()
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        ),
+    );
+  };
+
+  const filtered = accounts.filter(
+    (a) =>
+      a.name.toLowerCase().includes(query.toLowerCase()) ||
+      a.email.toLowerCase().includes(query.toLowerCase()),
+  );
+
+  const handleCopyEmail = async (email: string) => {
+    await navigator.clipboard.writeText(email);
+    setCopiedEmail(email);
+    toast.success("Email copied!");
+    setTimeout(() => setCopiedEmail(null), 2500);
+  };
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h2
+            className="font-display font-black text-2xl uppercase tracking-tight mb-1"
+            style={{ color: "#00ff41" }}
+          >
+            Customer <span style={{ color: "#c6ffd0" }}>Credentials</span>
+          </h2>
+          <p className="text-sm font-mono" style={{ color: "#00ff4199" }}>
+            {accounts.length} registered account
+            {accounts.length !== 1 ? "s" : ""} — passwords shown as secure hash
+            only
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={refresh}
+          className="px-4 py-2 rounded text-xs font-bold uppercase tracking-widest transition-colors"
+          style={{
+            border: "1px solid #00ff4155",
+            color: "#00ff41",
+            background: "transparent",
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.background =
+              "#00ff4122";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.background =
+              "transparent";
+          }}
+          data-ocid="admin-credentials-refresh"
+        >
+          Refresh
+        </button>
+      </div>
+
+      {/* Stats chip */}
+      <div
+        className="flex items-center gap-3 rounded-lg px-5 py-4 border"
+        style={{ background: "#00ff410a", borderColor: "#00ff4133" }}
+      >
+        <KeyRound className="w-5 h-5 shrink-0" style={{ color: "#00ff41" }} />
+        <div>
+          <p
+            className="font-mono font-black text-2xl leading-none"
+            style={{ color: "#00ff41" }}
+          >
+            {accounts.length}
+          </p>
+          <p
+            className="font-mono text-xs uppercase tracking-widest mt-0.5"
+            style={{ color: "#00ff4199" }}
+          >
+            Total Registered Customers
+          </p>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="relative max-w-md">
+        <Search
+          className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
+          style={{ color: "#00ff4199" }}
+        />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search by name or email…"
+          className="w-full rounded px-3 py-2 pl-9 text-sm font-mono focus:outline-none"
+          style={{
+            background: "#0f1a0f",
+            border: "1px solid #00ff4155",
+            color: "#00ff41",
+          }}
+          data-ocid="admin-credentials-search"
+        />
+      </div>
+
+      {/* Empty state */}
+      {accounts.length === 0 ? (
+        <div
+          className="rounded-lg border p-14 flex flex-col items-center gap-4 text-center"
+          style={{ borderColor: "#00ff4133", background: "#00ff410a" }}
+          data-ocid="admin-credentials-empty"
+        >
+          <KeyRound className="w-12 h-12" style={{ color: "#00ff4144" }} />
+          <p
+            className="font-mono text-sm font-bold uppercase tracking-widest"
+            style={{ color: "#00ff41" }}
+          >
+            No Customers Yet
+          </p>
+          <p className="font-mono text-xs" style={{ color: "#00ff4166" }}>
+            Registered customer accounts will appear here.
+          </p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div
+          className="rounded-lg border p-10 flex flex-col items-center gap-3 text-center"
+          style={{ borderColor: "#00ff4133", background: "#00ff410a" }}
+          data-ocid="admin-credentials-no-match"
+        >
+          <Search className="w-8 h-8" style={{ color: "#00ff4144" }} />
+          <p className="font-mono text-sm" style={{ color: "#00ff4199" }}>
+            No customers match &ldquo;{query}&rdquo;
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* Desktop table */}
+          <div
+            className="hidden md:block rounded-lg border overflow-hidden"
+            style={{ borderColor: "#00ff4133" }}
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm font-mono">
+                <thead>
+                  <tr
+                    style={{
+                      background: "#00ff410f",
+                      borderBottom: "1px solid #00ff4133",
+                    }}
+                  >
+                    {[
+                      "#",
+                      "Customer Name",
+                      "Email Address",
+                      "Password Hash",
+                      "Phone",
+                      "Registration Date",
+                    ].map((h) => (
+                      <th
+                        key={h}
+                        className="text-left px-4 py-3 text-xs uppercase tracking-widest font-bold whitespace-nowrap"
+                        style={{ color: "#00ff41" }}
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((acc, i) => (
+                    <tr
+                      key={acc.id}
+                      style={{
+                        borderBottom: "1px solid #00ff4120",
+                        background: i % 2 === 0 ? "transparent" : "#00ff4106",
+                      }}
+                      data-ocid={`admin-cred-row-${i}`}
+                    >
+                      <td
+                        className="px-4 py-3 text-xs"
+                        style={{ color: "#00ff4166" }}
+                      >
+                        {i + 1}
+                      </td>
+                      <td
+                        className="px-4 py-3 font-semibold"
+                        style={{ color: "#c6ffd0" }}
+                      >
+                        {acc.name}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="text-xs truncate max-w-[160px]"
+                            style={{ color: "#8aff8a" }}
+                          >
+                            {acc.email}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyEmail(acc.email)}
+                            aria-label="Copy email"
+                            className="shrink-0 transition-opacity hover:opacity-70"
+                            style={{
+                              color:
+                                copiedEmail === acc.email
+                                  ? "#00ff41"
+                                  : "#00ff4188",
+                            }}
+                            data-ocid={`admin-cred-copy-email-${i}`}
+                          >
+                            {copiedEmail === acc.email ? (
+                              <CheckCircle className="w-3.5 h-3.5" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className="text-xs font-mono px-2 py-0.5 rounded"
+                          style={{
+                            background: "#00ff4112",
+                            border: "1px solid #00ff4133",
+                            color: "#00ff4199",
+                            fontFamily: "monospace",
+                          }}
+                        >
+                          {acc.passwordHash || "—"}
+                        </span>
+                      </td>
+                      <td
+                        className="px-4 py-3 text-xs"
+                        style={{ color: "#8aff8a99" }}
+                      >
+                        {acc.phone || "—"}
+                      </td>
+                      <td
+                        className="px-4 py-3 text-xs whitespace-nowrap"
+                        style={{ color: "#8aff8a99" }}
+                      >
+                        {new Date(acc.createdAt).toLocaleDateString("en-IN", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Mobile cards */}
+          <div className="flex flex-col gap-3 md:hidden">
+            {filtered.map((acc, i) => (
+              <div
+                key={acc.id}
+                className="rounded-lg border p-4 flex flex-col gap-3"
+                style={{ borderColor: "#00ff4133", background: "#00ff410a" }}
+                data-ocid={`admin-cred-card-${i}`}
+              >
+                {/* Row 1: index + name */}
+                <div className="flex items-center gap-2">
+                  <span
+                    className="text-xs font-mono px-1.5 py-0.5 rounded"
+                    style={{
+                      color: "#00ff4166",
+                      border: "1px solid #00ff4133",
+                    }}
+                  >
+                    #{i + 1}
+                  </span>
+                  <span
+                    className="font-semibold font-mono text-sm"
+                    style={{ color: "#c6ffd0" }}
+                  >
+                    {acc.name}
+                  </span>
+                </div>
+
+                {/* Row 2: email + copy */}
+                <div className="flex items-center gap-2">
+                  <Mail
+                    className="w-3.5 h-3.5 shrink-0"
+                    style={{ color: "#00ff4188" }}
+                  />
+                  <span
+                    className="text-xs font-mono flex-1 break-all"
+                    style={{ color: "#8aff8a" }}
+                  >
+                    {acc.email}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyEmail(acc.email)}
+                    aria-label="Copy email"
+                    className="shrink-0 transition-opacity hover:opacity-70"
+                    style={{
+                      color:
+                        copiedEmail === acc.email ? "#00ff41" : "#00ff4188",
+                    }}
+                    data-ocid={`admin-cred-copy-email-mobile-${i}`}
+                  >
+                    {copiedEmail === acc.email ? (
+                      <CheckCircle className="w-4 h-4" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+
+                {/* Row 3: hash */}
+                <div>
+                  <p
+                    className="text-[10px] font-mono uppercase tracking-widest mb-1"
+                    style={{ color: "#00ff4166" }}
+                  >
+                    Password Hash
+                  </p>
+                  <span
+                    className="text-xs font-mono px-2 py-0.5 rounded inline-block"
+                    style={{
+                      background: "#00ff4112",
+                      border: "1px solid #00ff4133",
+                      color: "#00ff4199",
+                    }}
+                  >
+                    {acc.passwordHash || "—"}
+                  </span>
+                </div>
+
+                {/* Row 4: phone + reg date */}
+                <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+                  <div>
+                    <p
+                      className="uppercase tracking-widest text-[10px] mb-0.5"
+                      style={{ color: "#00ff4166" }}
+                    >
+                      Phone
+                    </p>
+                    <p style={{ color: "#8aff8a99" }}>{acc.phone || "—"}</p>
+                  </div>
+                  <div>
+                    <p
+                      className="uppercase tracking-widest text-[10px] mb-0.5"
+                      style={{ color: "#00ff4166" }}
+                    >
+                      Registered
+                    </p>
+                    <p style={{ color: "#8aff8a99" }}>
+                      {new Date(acc.createdAt).toLocaleDateString("en-IN", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
@@ -3650,6 +4973,8 @@ function AdminDashboardPage() {
             {activeSection === "settings" && <AdminWebsiteSettings />}
             {activeSection === "orders" && <AdminOrders />}
             {activeSection === "complaints" && <AdminComplaints />}
+            {activeSection === "invoices" && <AdminInvoices />}
+            {activeSection === "credentials" && <AdminCredentials />}
           </motion.div>
         </div>
       </main>

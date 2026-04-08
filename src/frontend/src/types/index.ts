@@ -50,6 +50,7 @@ export interface Order {
   totalPrice: number;
   status: "Pending" | "Paid" | "Shipped" | "Delivered";
   timestamp: string;
+  adminNote?: string;
 }
 
 export interface Review {

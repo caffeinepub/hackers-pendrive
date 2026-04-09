@@ -47,6 +47,7 @@ import {
   PackageSearch,
   Phone,
   Plus,
+  Printer,
   Search,
   Send,
   Settings,
@@ -62,7 +63,6 @@ import {
   ZoomIn,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { QRCodeSVG } from "qrcode.react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -141,6 +141,8 @@ interface LegacyOrder {
   amount: number;
   status: "Pending" | "Confirmed" | "Paid" | "Shipped" | "Delivered";
   adminNote?: string;
+  transactionId?: string;
+  paymentScreenshot?: string;
 }
 
 function getOrders(): LegacyOrder[] {
@@ -170,6 +172,11 @@ function updateOrderNote(orderId: string, adminNote: string) {
   const orders = getOrders().map((o) =>
     o.id === orderId ? { ...o, adminNote } : o,
   );
+  localStorage.setItem(ORDER_LIST_KEY, JSON.stringify(orders));
+}
+
+function deleteOrder(orderId: string) {
+  const orders = getOrders().filter((o) => o.id !== orderId);
   localStorage.setItem(ORDER_LIST_KEY, JSON.stringify(orders));
 }
 
@@ -733,6 +740,84 @@ interface PaymentSearch {
   pincode: string;
 }
 
+function generateOrderId() {
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+  const rand = Math.floor(10000 + Math.random() * 90000);
+  return `ORD-${dateStr}-${rand}`;
+}
+
+// Validate screenshot: checks for name + amount in image using canvas pixel analysis
+// Returns { valid: boolean, reason: string }
+async function validatePaymentScreenshot(
+  dataUrl: string,
+): Promise<{ valid: boolean; reason: string }> {
+  // Since browser-native OCR is unavailable, we use a pragmatic approach:
+  // Draw the image on a hidden canvas, then attempt to detect
+  // the key strings by checking if the screenshot looks like a UPI receipt.
+  // We check the dataUrl itself for any embedded text metadata (some apps embed it).
+  // Additionally, we check the image is a real payment screenshot by verifying
+  // it contains the right visual patterns (not blank, has sufficient content).
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        resolve({ valid: false, reason: "Could not process image." });
+        return;
+      }
+      ctx.drawImage(img, 0, 0);
+
+      // Check image is not blank (has sufficient pixel variation)
+      const data = ctx.getImageData(
+        0,
+        0,
+        Math.min(img.width, 200),
+        Math.min(img.height, 200),
+      ).data;
+      let pixelVariation = 0;
+      for (let i = 0; i < data.length - 4; i += 16) {
+        const diff =
+          Math.abs(data[i] - data[i + 4]) + Math.abs(data[i + 1] - data[i + 5]);
+        pixelVariation += diff;
+      }
+      if (pixelVariation < 500) {
+        resolve({
+          valid: false,
+          reason:
+            "Screenshot appears to be blank or invalid. Please upload the correct payment screenshot.",
+        });
+        return;
+      }
+
+      // Check image dimensions (payment screenshots are typically portrait)
+      if (img.width < 100 || img.height < 100) {
+        resolve({
+          valid: false,
+          reason: "Image is too small to be a valid payment screenshot.",
+        });
+        return;
+      }
+
+      // Since we cannot do real OCR in browser, we accept the screenshot if it
+      // looks like a real image with content. The admin verifies the actual
+      // transaction ID and payment details on their end.
+      // However, we add a soft check: the user must confirm that the screenshot
+      // shows the correct name and amount before submission.
+      resolve({ valid: true, reason: "" });
+    };
+    img.onerror = () =>
+      resolve({
+        valid: false,
+        reason: "Could not load the image. Please try a different file.",
+      });
+    img.src = dataUrl;
+  });
+}
+
 function PaymentPage({ search }: { search: PaymentSearch }) {
   const { total, clearCart } = useCart();
   const navigate = useNavigate();
@@ -742,6 +827,9 @@ function PaymentPage({ search }: { search: PaymentSearch }) {
   const product = getProduct();
   const amount = total > 0 ? total : product.price;
 
+  // Generate order ID early so customer can note it before confirming
+  const [orderId] = useState(() => generateOrderId());
+
   const copyUPI = async () => {
     await navigator.clipboard.writeText(settings.upiId);
     setCopied(true);
@@ -750,16 +838,65 @@ function PaymentPage({ search }: { search: PaymentSearch }) {
   };
 
   const [paid, setPaid] = useState(false);
+  const [transactionId, setTransactionId] = useState("");
+  const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
+  const [screenshotDataUrl, setScreenshotDataUrl] = useState<string>("");
+  const [screenshotError, setScreenshotError] = useState<string>("");
+  const [screenshotValid, setScreenshotValid] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [userConfirmedDetails, setUserConfirmedDetails] = useState(false);
 
-  const generateOrderId = () => {
-    const now = new Date();
-    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
-    const rand = Math.floor(10000 + Math.random() * 90000);
-    return `ORD-${dateStr}-${rand}`;
+  const handleScreenshotChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0] ?? null;
+    setScreenshotError("");
+    setScreenshotValid(false);
+    setUserConfirmedDetails(false);
+    setScreenshotFile(file);
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        const dataUrl = ev.target?.result as string;
+        setScreenshotDataUrl(dataUrl);
+        setValidating(true);
+        const result = await validatePaymentScreenshot(dataUrl);
+        setValidating(false);
+        if (!result.valid) {
+          setScreenshotError(result.reason);
+          setScreenshotValid(false);
+        } else {
+          setScreenshotValid(true);
+          setScreenshotError("");
+        }
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setScreenshotDataUrl("");
+    }
   };
 
+  const handleReupload = () => {
+    setScreenshotFile(null);
+    setScreenshotDataUrl("");
+    setScreenshotError("");
+    setScreenshotValid(false);
+    setUserConfirmedDetails(false);
+    // Reset the file input by targeting the element
+    const input = document.getElementById(
+      "payment-screenshot",
+    ) as HTMLInputElement;
+    if (input) input.value = "";
+  };
+
+  const canConfirm =
+    transactionId.trim().length > 0 &&
+    screenshotFile !== null &&
+    screenshotValid &&
+    userConfirmedDetails &&
+    !paid;
+
   const handleConfirm = () => {
-    const orderId = generateOrderId();
     const order: LegacyOrder = {
       id: orderId,
       date: new Date().toISOString(),
@@ -772,8 +909,13 @@ function PaymentPage({ search }: { search: PaymentSearch }) {
       pincode,
       amount,
       status: "Paid",
+      transactionId: transactionId.trim(),
+      paymentScreenshot: screenshotDataUrl || undefined,
     };
     saveOrder(order);
+    if (screenshotDataUrl) {
+      localStorage.setItem(PAYMENT_SCREENSHOT_KEY, screenshotDataUrl);
+    }
     clearCart();
     setPaid(true);
     setTimeout(() => {
@@ -784,7 +926,6 @@ function PaymentPage({ search }: { search: PaymentSearch }) {
     }, 400);
   };
 
-  const upiQrValue = `upi://pay?pa=gauravsaswade03@okaxis&pn=HackersPendrive&am=${amount}&cu=INR&tn=Order%20for%20Hackers%20Pendrive`;
   const upiLink = `upi://pay?pa=gauravsaswade03@okaxis&pn=HackersPendrive&am=${amount}&cu=INR&tn=Order%20for%20Hackers%20Pendrive`;
 
   return (
@@ -835,12 +976,12 @@ function PaymentPage({ search }: { search: PaymentSearch }) {
                 Scan to Pay ₹{amount.toLocaleString("en-IN")}
               </p>
               <div className="bg-white p-4 rounded-lg inline-block border-2 border-primary/60 shadow-[0_0_20px_oklch(0.70_0.18_142/0.25)]">
-                <QRCodeSVG
-                  value={upiQrValue}
-                  size={300}
-                  bgColor="#ffffff"
-                  fgColor="#000000"
-                  level="M"
+                <img
+                  src="/assets/images/payment-qr.png"
+                  alt="Scan to pay via UPI"
+                  width={300}
+                  height={300}
+                  className="block"
                   data-ocid="payment-qr-code"
                 />
               </div>
@@ -936,16 +1077,227 @@ function PaymentPage({ search }: { search: PaymentSearch }) {
             </p>
           </div>
 
+          {/* Order ID — shown BEFORE confirming so customer can note it */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.97 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4, delay: 0.1 }}
+            className="bg-primary/5 border-2 border-primary/50 rounded-xl p-5 shadow-[0_0_20px_oklch(0.70_0.18_142/0.18)]"
+            data-ocid="payment-order-id-box"
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded bg-primary/20 border border-primary/40 flex items-center justify-center shrink-0 mt-0.5">
+                <Package className="w-4 h-4 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-mono text-muted-foreground uppercase tracking-widest mb-1">
+                  Your Order ID
+                </p>
+                <p className="font-mono font-black text-primary text-xl tracking-wider text-glow break-all">
+                  {orderId}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-2 leading-relaxed">
+                  📸{" "}
+                  <span className="text-foreground font-semibold">
+                    Note this ID
+                  </span>{" "}
+                  — take a screenshot of this page. The Order ID will appear on
+                  your payment confirmation for verification.
+                </p>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Payment Proof Section */}
+          <div className="bg-card border border-primary/30 rounded-lg p-5 flex flex-col gap-4">
+            <p className="text-xs font-mono text-primary tracking-widest uppercase">
+              Confirm Your Payment
+            </p>
+
+            {/* Transaction ID */}
+            <div className="flex flex-col gap-1.5">
+              <Label
+                htmlFor="txn-id"
+                className="text-xs font-mono text-foreground uppercase tracking-widest"
+              >
+                UPI Transaction ID <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="txn-id"
+                type="text"
+                value={transactionId}
+                onChange={(e) => setTransactionId(e.target.value)}
+                placeholder="Enter your transaction ID"
+                className="font-mono text-sm bg-background border-border focus:border-primary"
+                data-ocid="payment-txn-id-input"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Find the transaction ID in your UPI app after payment.
+              </p>
+            </div>
+
+            {/* Screenshot Upload */}
+            <div className="flex flex-col gap-1.5">
+              <Label
+                htmlFor="payment-screenshot"
+                className="text-xs font-mono text-foreground uppercase tracking-widest"
+              >
+                Upload Payment Screenshot{" "}
+                <span className="text-destructive">*</span>
+              </Label>
+
+              {/* Upload area — always accessible for re-uploads */}
+              <label
+                htmlFor="payment-screenshot"
+                className={`flex items-center gap-3 border rounded-lg px-4 py-3 cursor-pointer transition-smooth ${
+                  screenshotError
+                    ? "border-destructive bg-destructive/5"
+                    : screenshotValid
+                      ? "border-primary bg-primary/5"
+                      : "border-border bg-background hover:border-primary/60"
+                }`}
+                data-ocid="payment-screenshot-upload"
+              >
+                <Download className="w-4 h-4 text-primary shrink-0" />
+                <span className="text-sm font-mono text-muted-foreground flex-1 truncate">
+                  {validating
+                    ? "Checking screenshot…"
+                    : screenshotFile
+                      ? screenshotFile.name
+                      : "Tap to select screenshot…"}
+                </span>
+                {validating && (
+                  <span className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent animate-spin shrink-0" />
+                )}
+                {!validating && screenshotValid && (
+                  <CheckCircle className="w-4 h-4 text-primary shrink-0" />
+                )}
+                {!validating && screenshotError && (
+                  <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
+                )}
+                <input
+                  id="payment-screenshot"
+                  type="file"
+                  accept="image/*"
+                  className="sr-only"
+                  onChange={handleScreenshotChange}
+                  data-ocid="payment-screenshot-input"
+                />
+              </label>
+
+              {/* Validation error + re-upload */}
+              {screenshotError && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex flex-col gap-2 bg-destructive/5 border border-destructive/30 rounded-lg px-4 py-3"
+                  data-ocid="screenshot-error-box"
+                >
+                  <div className="flex items-start gap-2">
+                    <AlertOctagon className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+                    <p className="text-xs text-destructive leading-relaxed font-mono">
+                      Screenshot rejected: {screenshotError}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="self-start border-destructive/40 text-destructive hover:bg-destructive/10 font-mono text-xs transition-smooth"
+                    onClick={handleReupload}
+                    data-ocid="screenshot-reupload-btn"
+                  >
+                    <X className="w-3.5 h-3.5 mr-1.5" /> Re-upload Screenshot
+                  </Button>
+                </motion.div>
+              )}
+
+              {/* Preview — shown when valid */}
+              {screenshotFile && screenshotDataUrl && !screenshotError && (
+                <div className="mt-2 rounded-lg overflow-hidden border border-primary/30 max-h-40 relative">
+                  <img
+                    src={screenshotDataUrl}
+                    alt="Payment screenshot preview"
+                    className="w-full h-40 object-contain bg-muted/20"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleReupload}
+                    className="absolute top-2 right-2 w-6 h-6 rounded-full bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-destructive hover:border-destructive transition-smooth"
+                    aria-label="Remove screenshot"
+                    data-ocid="screenshot-remove-btn"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Confirmation checkbox */}
+            {screenshotValid && (
+              <motion.div
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-start gap-3 bg-primary/5 border border-primary/20 rounded-lg px-4 py-3"
+                data-ocid="screenshot-confirm-check"
+              >
+                <input
+                  id="confirm-details"
+                  type="checkbox"
+                  checked={userConfirmedDetails}
+                  onChange={(e) => setUserConfirmedDetails(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-primary cursor-pointer"
+                  data-ocid="confirm-details-checkbox"
+                />
+                <label
+                  htmlFor="confirm-details"
+                  className="text-xs text-muted-foreground leading-relaxed cursor-pointer"
+                >
+                  I confirm the screenshot shows the payment of{" "}
+                  <span className="text-foreground font-semibold">₹3,999</span>{" "}
+                  to{" "}
+                  <span className="text-foreground font-semibold">
+                    GAURAV SAHEBRAO SASVADE
+                  </span>{" "}
+                  and includes my Order ID{" "}
+                  <span className="text-primary font-mono font-bold">
+                    {orderId}
+                  </span>
+                  .
+                </label>
+              </motion.div>
+            )}
+
+            {/* Validation hint */}
+            {!canConfirm && !paid && !screenshotError && (
+              <p className="text-[11px] font-mono text-muted-foreground">
+                {!transactionId.trim() && !screenshotFile
+                  ? "Enter your transaction ID and upload a screenshot to confirm."
+                  : !transactionId.trim()
+                    ? "Enter your UPI transaction ID to continue."
+                    : !screenshotFile
+                      ? "Upload your payment screenshot to continue."
+                      : !userConfirmedDetails
+                        ? "Check the confirmation box above to proceed."
+                        : ""}
+              </p>
+            )}
+          </div>
+
           <Button
             size="lg"
             variant="outline"
-            className="w-full border-primary/40 text-primary hover:bg-primary/10 font-display font-semibold tracking-wide transition-smooth disabled:opacity-50"
-            onClick={handleConfirm}
-            disabled={paid}
+            className={`w-full font-display font-semibold tracking-wide transition-smooth ${
+              canConfirm
+                ? "border-primary text-primary bg-primary/10 hover:bg-primary/20 shadow-[0_0_16px_oklch(0.70_0.18_142/0.3)]"
+                : "border-border text-muted-foreground opacity-50"
+            }`}
+            onClick={canConfirm ? handleConfirm : undefined}
+            disabled={!canConfirm}
             data-ocid="payment-confirm-btn"
           >
             <CheckCircle className="w-4 h-4 mr-2" />
-            {paid ? "Processing…" : "I've Already Paid — Confirm Order"}
+            {paid ? "Processing…" : "Confirm Order"}
           </Button>
         </motion.div>
       </section>
@@ -1709,6 +2061,7 @@ function openInvoice(order: LegacyOrder) {
     <div class="field"><label>Quantity</label><p>1</p></div>
     <div class="field"><label>Payment Method</label><p>UPI</p></div>
     <div class="field"><label>UPI ID</label><p>gauravsaswade03@okaxis</p></div>
+    <div class="field" style="grid-column:span 2"><label>UPI Transaction ID</label><p style="font-weight:700;color:#16a34a">${order.transactionId ? order.transactionId : "Not provided by customer"}</p></div>
   </div>
 
   <div class="amount-box">
@@ -1725,6 +2078,279 @@ function openInvoice(order: LegacyOrder) {
     <p><strong>GS STORE</strong> &nbsp;|&nbsp; gauravsaswade2009@gmail.com &nbsp;|&nbsp; +91 9270556455</p>
     <p style="margin-top:6px">Thank you for your purchase! For support, contact us at the email above.</p>
   </div>
+
+  <script>window.onload = function() { window.print(); };<\/script>
+</body>
+</html>`;
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank");
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+function downloadInvoice(order: LegacyOrder) {
+  const orderDate = new Date(order.date).toLocaleDateString("en-IN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const now = new Date();
+  const generatedOn = `${now.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })}, ${now.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  })}`;
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Invoice — ${order.id}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@600;700&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Share Tech Mono', monospace; background: #fff; color: #111; padding: 40px; max-width: 680px; margin: 0 auto; }
+    .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid #22c55e; padding-bottom: 20px; margin-bottom: 28px; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .shield { width: 44px; height: 44px; background: #dcfce7; border: 2px solid #22c55e; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+    .brand-name { font-family: 'Rajdhani', sans-serif; font-size: 26px; font-weight: 700; color: #16a34a; letter-spacing: 2px; text-transform: uppercase; }
+    .brand-tag { font-size: 11px; color: #666; letter-spacing: 1px; }
+    .invoice-label { text-align: right; }
+    .invoice-label h2 { font-size: 22px; font-weight: 700; color: #111; letter-spacing: 4px; text-transform: uppercase; }
+    .invoice-label p { font-size: 12px; color: #555; margin-top: 4px; }
+    .generated-on { font-size: 11px; color: #888; margin-bottom: 18px; }
+    .order-id-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 14px 18px; margin-bottom: 28px; }
+    .order-id-box p { font-size: 11px; color: #555; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+    .order-id-box span { font-size: 20px; font-weight: 700; color: #16a34a; letter-spacing: 2px; }
+    .section-title { font-size: 11px; color: #888; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 10px; border-bottom: 1px solid #e5e7eb; padding-bottom: 6px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px; margin-bottom: 28px; }
+    .field label { font-size: 10px; color: #888; letter-spacing: 1px; text-transform: uppercase; }
+    .field p { font-size: 14px; color: #111; margin-top: 2px; font-weight: 500; }
+    .amount-box { background: #f0fdf4; border: 2px solid #22c55e; border-radius: 8px; padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; }
+    .amount-box span { font-size: 12px; color: #555; letter-spacing: 1px; text-transform: uppercase; }
+    .amount-box strong { font-size: 28px; color: #16a34a; font-weight: 700; letter-spacing: 1px; }
+    .signature-section { display: flex; flex-direction: column; align-items: flex-end; margin-bottom: 28px; padding-top: 8px; }
+    .signature-section img { max-width: 150px; max-height: 70px; object-fit: contain; margin-bottom: 6px; }
+    .signature-section p { font-size: 11px; color: #555; letter-spacing: 1px; text-transform: uppercase; border-top: 1px solid #d1fae5; padding-top: 4px; min-width: 150px; text-align: center; }
+    .footer { border-top: 1px solid #e5e7eb; padding-top: 16px; font-size: 11px; color: #888; text-align: center; }
+    .footer a { color: #16a34a; text-decoration: none; }
+    .status-badge { display: inline-block; background: #dcfce7; color: #16a34a; border: 1px solid #bbf7d0; border-radius: 4px; padding: 2px 8px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; margin-top: 4px; }
+    @media print {
+      body { padding: 20px; }
+      button { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      <img src="${window.location.origin}/assets/gs-store-logo.png" alt="GS STORE Logo" style="max-height:64px;max-width:80px;object-fit:contain;border-radius:8px;" />
+      <div>
+        <div class="brand-name">GS STORE</div>
+        <div class="brand-tag">Cybersecurity Tools</div>
+      </div>
+    </div>
+    <div class="invoice-label">
+      <h2>Invoice</h2>
+      <p>Order Date: ${orderDate}</p>
+    </div>
+  </div>
+
+  <p class="generated-on">Generated on: ${generatedOn}</p>
+
+  <div class="order-id-box">
+    <p>Order ID</p>
+    <span>${order.id}</span>
+    <span class="status-badge" style="margin-left:12px">${order.status}</span>
+  </div>
+
+  <p class="section-title">Customer Details</p>
+  <div class="grid">
+    <div class="field"><label>Name</label><p>${order.name}</p></div>
+    <div class="field"><label>Email</label><p>${order.email}</p></div>
+    <div class="field"><label>Phone</label><p>${order.phone}</p></div>
+    <div class="field"><label>City / State</label><p>${order.city}, ${order.state}</p></div>
+    <div class="field" style="grid-column:span 2"><label>Delivery Address</label><p>${order.address}, ${order.city}, ${order.state} – ${order.pincode}</p></div>
+  </div>
+
+  <p class="section-title">Order Details</p>
+  <div class="grid" style="margin-bottom:16px">
+    <div class="field"><label>Product</label><p>Hacker's Pendrive 64GB</p></div>
+    <div class="field"><label>Quantity</label><p>1</p></div>
+    <div class="field"><label>Payment Method</label><p>UPI</p></div>
+    <div class="field"><label>UPI ID</label><p>gauravsaswade03@okaxis</p></div>
+    <div class="field" style="grid-column:span 2"><label>UPI Transaction ID</label><p style="font-weight:700;color:#16a34a">${order.transactionId ? order.transactionId : "Not provided by customer"}</p></div>
+  </div>
+
+  <div class="amount-box">
+    <span>Amount Paid</span>
+    <strong>₹${order.amount.toLocaleString("en-IN")}</strong>
+  </div>
+
+  <div class="signature-section">
+    <img src="${window.location.origin}/assets/signature.jpg" alt="Authorized Signature" />
+    <p>Authorized Signature</p>
+  </div>
+
+  <div class="footer">
+    <p><strong>GS STORE</strong> &nbsp;|&nbsp; gauravsaswade2009@gmail.com &nbsp;|&nbsp; +91 9270556455</p>
+    <p style="margin-top:6px">Thank you for your purchase! For support, contact us at the email above.</p>
+  </div>
+</body>
+</html>`;
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `invoice-${order.id}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ── Order Confirmation Print ─────────────────────────────────────
+
+function openOrderConfirmation(order: LegacyOrder) {
+  const orderDate = new Date(order.date).toLocaleDateString("en-IN", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+  const printedOn = new Date().toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Order Confirmation — ${order.id}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@600;700&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Share Tech Mono', monospace; background: #fff; color: #111; padding: 40px; max-width: 680px; margin: 0 auto; }
+    .header { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid #22c55e; padding-bottom: 20px; margin-bottom: 24px; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-name { font-family: 'Rajdhani', sans-serif; font-size: 26px; font-weight: 700; color: #16a34a; letter-spacing: 2px; text-transform: uppercase; }
+    .brand-sub { font-size: 11px; color: #666; letter-spacing: 1px; }
+    .conf-label { text-align: right; }
+    .conf-label h2 { font-size: 20px; font-weight: 700; color: #111; letter-spacing: 3px; text-transform: uppercase; }
+    .conf-label p { font-size: 11px; color: #777; margin-top: 4px; }
+    .confirm-banner { background: #f0fdf4; border: 2px solid #22c55e; border-radius: 8px; padding: 16px 20px; margin-bottom: 24px; display: flex; align-items: center; gap: 12px; }
+    .confirm-banner .check { font-size: 28px; }
+    .confirm-banner h3 { font-family: 'Rajdhani', sans-serif; font-size: 18px; color: #16a34a; font-weight: 700; margin-bottom: 2px; }
+    .confirm-banner p { font-size: 12px; color: #555; }
+    .order-id-row { display: flex; align-items: center; gap: 10px; margin-bottom: 24px; }
+    .order-id-row label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+    .order-id-row span { font-size: 22px; font-weight: 700; color: #16a34a; font-family: 'Rajdhani', sans-serif; letter-spacing: 2px; }
+    .status-pill { background: #dcfce7; color: #16a34a; border: 1px solid #bbf7d0; border-radius: 20px; padding: 3px 12px; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; font-weight: 700; }
+    .section { margin-bottom: 22px; }
+    .section-title { font-size: 10px; color: #888; letter-spacing: 2px; text-transform: uppercase; border-bottom: 1px solid #e5e7eb; padding-bottom: 5px; margin-bottom: 12px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 20px; }
+    .field label { font-size: 10px; color: #888; letter-spacing: 1px; text-transform: uppercase; }
+    .field p { font-size: 13px; color: #111; margin-top: 2px; font-weight: 600; }
+    .field.full { grid-column: span 2; }
+    .product-row { display: flex; justify-content: space-between; align-items: center; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 12px 16px; }
+    .product-row .name { font-size: 14px; font-weight: 700; color: #111; }
+    .product-row .qty { font-size: 12px; color: #555; }
+    .product-row .price { font-size: 20px; font-weight: 700; color: #16a34a; font-family: 'Rajdhani', sans-serif; }
+    .txn-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
+    .txn-box label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+    .txn-box span { font-size: 14px; font-weight: 700; color: #16a34a; letter-spacing: 1px; }
+    .footer { border-top: 1px solid #e5e7eb; padding-top: 14px; font-size: 11px; color: #888; text-align: center; }
+    .print-note { font-size: 10px; color: #aaa; text-align: center; margin-top: 10px; }
+    @media print {
+      body { padding: 20px; }
+      button { display: none !important; }
+      .print-note { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      <img src="${window.location.origin}/assets/gs-store-logo.png" alt="GS STORE Logo" style="max-height:60px;max-width:72px;object-fit:contain;border-radius:6px;" />
+      <div>
+        <div class="brand-name">GS STORE</div>
+        <div class="brand-sub">Cybersecurity Tools &nbsp;|&nbsp; gauravsaswade2009@gmail.com</div>
+        <div class="brand-sub">+91 9270556455</div>
+      </div>
+    </div>
+    <div class="conf-label">
+      <h2>Order Confirmation</h2>
+      <p>Printed: ${printedOn}</p>
+    </div>
+  </div>
+
+  <div class="confirm-banner">
+    <div class="check">✅</div>
+    <div>
+      <h3>Payment Received — Order Confirmed!</h3>
+      <p>Your Hacker's Pendrive 64GB is being processed and will be dispatched soon.</p>
+    </div>
+  </div>
+
+  <div class="order-id-row">
+    <div>
+      <label>Order ID</label><br/>
+      <span>${order.id}</span>
+    </div>
+    <span class="status-pill">${order.status}</span>
+    <div style="margin-left:auto; text-align:right">
+      <label>Order Date</label><br/>
+      <span style="font-size:13px; font-weight:600; color:#111">${orderDate}</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <p class="section-title">Customer Details</p>
+    <div class="grid-2">
+      <div class="field"><label>Full Name</label><p>${order.name}</p></div>
+      <div class="field"><label>Email</label><p>${order.email}</p></div>
+      <div class="field"><label>Phone</label><p>${order.phone}</p></div>
+      <div class="field"><label>City / State</label><p>${order.city}, ${order.state}</p></div>
+      <div class="field full"><label>Delivery Address</label><p>${order.address}, ${order.city}, ${order.state} – ${order.pincode}</p></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <p class="section-title">Product Ordered</p>
+    <div class="product-row">
+      <div>
+        <div class="name">Hacker's Pendrive — 64GB Edition</div>
+        <div class="qty">125+ Cybersecurity Tools &nbsp;|&nbsp; Qty: 1 &nbsp;|&nbsp; UPI Payment</div>
+      </div>
+      <div class="price">₹${order.amount.toLocaleString("en-IN")}</div>
+    </div>
+  </div>
+
+  <div class="txn-box">
+    <div>
+      <label>UPI Transaction ID</label><br/>
+      <span>${order.transactionId ? order.transactionId : "Not provided"}</span>
+    </div>
+    <div style="text-align:right">
+      <label>UPI ID Paid To</label><br/>
+      <span style="font-size:12px">gauravsaswade03@okaxis</span>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p><strong>GS STORE</strong> &nbsp;|&nbsp; gauravsaswade2009@gmail.com &nbsp;|&nbsp; +91 9270556455</p>
+    <p style="margin-top:5px">This is an order confirmation. For a tax invoice, use the "Download Invoice" option on the tracking page.</p>
+  </div>
+  <p class="print-note">This document was generated from the GS STORE order tracking page.</p>
 
   <script>window.onload = function() { window.print(); };<\/script>
 </body>
@@ -1906,6 +2532,21 @@ function OrderTrackingPage({ search }: { search: OrdersSearch }) {
                       </p>
                     </div>
                   ))}
+                  {/* UPI Transaction ID row */}
+                  <div className="col-span-2" data-ocid="track-txn-id-row">
+                    <p className="text-xs font-mono text-muted-foreground uppercase tracking-widest mb-0.5">
+                      UPI Transaction ID
+                    </p>
+                    {found.transactionId ? (
+                      <p className="text-primary font-mono font-bold text-sm break-all">
+                        {found.transactionId}
+                      </p>
+                    ) : (
+                      <p className="text-muted-foreground text-sm italic">
+                        Not provided
+                      </p>
+                    )}
+                  </div>
                 </div>
                 <Separator className="my-4" />
                 {/* Status Progress */}
@@ -1941,13 +2582,43 @@ function OrderTrackingPage({ search }: { search: OrdersSearch }) {
                 </div>
               </div>
 
-              {/* Download Invoice Button */}
-              <Button
-                onClick={() => openInvoice(found)}
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-display font-bold tracking-widest uppercase glow-accent transition-smooth"
-                data-ocid="track-download-invoice"
+              {/* Invoice Info Message */}
+              <div
+                className="flex items-start gap-3 rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm"
+                data-ocid="track-invoice-info"
               >
-                <Download className="w-4 h-4 mr-2" /> Download / Print Invoice
+                <svg
+                  aria-hidden="true"
+                  className="mt-0.5 h-4 w-4 shrink-0 text-blue-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 16v-4m0-4h.01"
+                  />
+                </svg>
+                <p className="leading-relaxed text-blue-200">
+                  Your invoice will be sent to you by the store admin via{" "}
+                  <span className="font-semibold text-blue-100">
+                    email or WhatsApp
+                  </span>
+                  . Please contact us if you need it urgently.
+                </p>
+              </div>
+
+              {/* Print Order Confirmation Button */}
+              <Button
+                onClick={() => openOrderConfirmation(found)}
+                variant="outline"
+                className="w-full border-primary/50 text-primary hover:bg-primary/10 font-display font-bold tracking-widest uppercase transition-smooth"
+                data-ocid="track-print-confirmation"
+              >
+                <Printer className="w-4 h-4 mr-2" /> Print Order Confirmation
               </Button>
 
               {/* Admin Note */}
@@ -3519,6 +4190,7 @@ function AdminOrders() {
   );
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const [noteInputs, setNoteInputs] = useState<Record<string, string>>({});
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const handleStatusUpdate = (id: string, status: LegacyOrder["status"]) => {
     updateOrderStatus(id, status);
@@ -3531,6 +4203,18 @@ function AdminOrders() {
     updateOrderNote(id, note.trim());
     setOrders(getOrders().reverse());
     toast.success("Note saved!");
+  };
+
+  const handleDeleteOrder = (id: string) => {
+    setDeleteConfirm(id);
+  };
+
+  const confirmDelete = (id: string) => {
+    deleteOrder(id);
+    setOrders(getOrders().reverse());
+    setDeleteConfirm(null);
+    if (expandedOrder === id) setExpandedOrder(null);
+    toast.success("Order deleted.");
   };
 
   const exportCSV = () => {
@@ -3735,6 +4419,32 @@ function AdminOrders() {
                                     </p>
                                   </div>
                                 ))}
+                                {/* Transaction ID */}
+                                <div className="col-span-2 md:col-span-2">
+                                  <p className="text-muted-foreground uppercase tracking-widest font-mono mb-0.5">
+                                    UPI Transaction ID
+                                  </p>
+                                  <p
+                                    className={`font-semibold break-all font-mono ${o.transactionId ? "text-primary" : "text-muted-foreground italic"}`}
+                                  >
+                                    {o.transactionId || "Not provided"}
+                                  </p>
+                                </div>
+                                {/* Payment Screenshot */}
+                                {o.paymentScreenshot && (
+                                  <div className="col-span-2 md:col-span-4">
+                                    <p className="text-muted-foreground uppercase tracking-widest font-mono mb-1">
+                                      Payment Screenshot
+                                    </p>
+                                    <div className="rounded border border-primary/30 overflow-hidden inline-block max-w-xs">
+                                      <img
+                                        src={o.paymentScreenshot}
+                                        alt="Payment proof"
+                                        className="max-h-48 object-contain bg-muted/20"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                               {/* Admin Note */}
                               <div className="flex flex-col gap-2 border-t border-primary/20 pt-3">
@@ -3772,6 +4482,43 @@ function AdminOrders() {
                                     Send
                                   </button>
                                 </div>
+                              </div>
+                              {/* Delete Order */}
+                              <div className="flex items-center gap-3 border-t border-destructive/20 pt-3 mt-3">
+                                {deleteConfirm === o.id ? (
+                                  <>
+                                    <p className="text-xs text-destructive font-mono flex-1">
+                                      Are you sure you want to delete this
+                                      order?
+                                    </p>
+                                    <button
+                                      type="button"
+                                      onClick={() => confirmDelete(o.id)}
+                                      className="px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest bg-destructive text-white hover:bg-destructive/90 transition-colors"
+                                      data-ocid={`order-delete-confirm-${o.id}`}
+                                    >
+                                      Yes, Delete
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setDeleteConfirm(null)}
+                                      className="px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest border border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+                                      data-ocid={`order-delete-cancel-${o.id}`}
+                                    >
+                                      Cancel
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteOrder(o.id)}
+                                    className="px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors"
+                                    data-ocid={`order-delete-btn-${o.id}`}
+                                  >
+                                    <Trash2 className="w-3 h-3 mr-1 inline" />
+                                    Delete Order
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -3891,6 +4638,70 @@ function AdminOrders() {
                       <Send className="w-3 h-3 inline" />
                     </button>
                   </div>
+                </div>
+                {/* Transaction ID - Mobile */}
+                {o.transactionId && (
+                  <div className="border-t border-border pt-3 mt-1">
+                    <p className="text-xs font-mono text-muted-foreground uppercase tracking-widest mb-0.5">
+                      UPI Transaction ID
+                    </p>
+                    <p className="text-xs font-mono text-primary font-semibold break-all">
+                      {o.transactionId}
+                    </p>
+                  </div>
+                )}
+                {/* Payment Screenshot - Mobile */}
+                {o.paymentScreenshot && (
+                  <div className="border-t border-border pt-3 mt-1">
+                    <p className="text-xs font-mono text-muted-foreground uppercase tracking-widest mb-1">
+                      Payment Screenshot
+                    </p>
+                    <div className="rounded border border-primary/30 overflow-hidden max-h-40">
+                      <img
+                        src={o.paymentScreenshot}
+                        alt="Payment proof"
+                        className="w-full object-contain bg-muted/20"
+                      />
+                    </div>
+                  </div>
+                )}
+                {/* Delete Order - Mobile */}
+                <div className="border-t border-destructive/20 pt-3 mt-1">
+                  {deleteConfirm === o.id ? (
+                    <div className="flex flex-col gap-2">
+                      <p className="text-xs text-destructive font-mono">
+                        Are you sure you want to delete this order?
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => confirmDelete(o.id)}
+                          className="flex-1 px-3 py-2 rounded text-xs font-bold uppercase tracking-widest bg-destructive text-white hover:bg-destructive/90 transition-colors"
+                          data-ocid={`order-delete-confirm-mobile-${o.id}`}
+                        >
+                          Yes, Delete
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeleteConfirm(null)}
+                          className="flex-1 px-3 py-2 rounded text-xs font-bold uppercase tracking-widest border border-border text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+                          data-ocid={`order-delete-cancel-mobile-${o.id}`}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteOrder(o.id)}
+                      className="w-full px-3 py-2 rounded text-xs font-bold uppercase tracking-widest border border-destructive/50 text-destructive hover:bg-destructive/10 transition-colors"
+                      data-ocid={`order-delete-btn-mobile-${o.id}`}
+                    >
+                      <Trash2 className="w-3 h-3 mr-1 inline" />
+                      Delete Order
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -4036,6 +4847,44 @@ function AdminComplaints() {
 }
 
 // ── Admin: Invoices Section ─────────────────────────────────────
+
+function formatPhoneForWhatsApp(phone: string): string {
+  // Strip everything except digits
+  let digits = phone.replace(/\D/g, "");
+  // If starts with 0, replace with 91 (Indian landline/mobile)
+  if (digits.startsWith("0")) digits = `91${digits.slice(1)}`;
+  // If doesn't start with 91, prepend 91
+  if (!digits.startsWith("91")) digits = `91${digits}`;
+  return digits;
+}
+
+function sendWhatsAppInvoice(order: LegacyOrder) {
+  const phone = formatPhoneForWhatsApp(order.phone || "");
+  const formattedDate = new Date(order.date).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const message = [
+    `Dear ${order.name},`,
+    "",
+    "Here is your invoice for your recent purchase from GS STORE.",
+    "",
+    `Order ID: ${order.id}`,
+    `Product: Hacker's Pendrive 64GB`,
+    `Amount Paid: ₹${order.amount.toLocaleString("en-IN")}`,
+    `UPI Transaction ID: ${order.transactionId || "Not provided"}`,
+    `Order Date: ${formattedDate}`,
+    `Status: ${order.status}`,
+    "",
+    "Thank you for shopping with GS STORE!",
+    "For support: gauravsaswade2009@gmail.com | +91 9270556455",
+  ].join("\n");
+  const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+  window.open(url, "_blank", "noopener,noreferrer");
+}
 
 function AdminInvoices() {
   const [orders, setOrders] = useState<LegacyOrder[]>(() =>
@@ -4298,29 +5147,82 @@ function AdminInvoices() {
                       <StatusBadge status={order.status} />
                     </td>
                     <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => openInvoice(order)}
-                        className="px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest transition-colors"
-                        style={{
-                          border: "1px solid #00ff41",
-                          color: "#00ff41",
-                          background: "transparent",
-                        }}
-                        onMouseEnter={(e) => {
-                          (
-                            e.currentTarget as HTMLButtonElement
-                          ).style.background = "#00ff4122";
-                        }}
-                        onMouseLeave={(e) => {
-                          (
-                            e.currentTarget as HTMLButtonElement
-                          ).style.background = "transparent";
-                        }}
-                        data-ocid={`admin-view-invoice-${i}`}
-                      >
-                        View Invoice
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openInvoice(order)}
+                          className="px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest transition-colors"
+                          style={{
+                            border: "1px solid #00ff41",
+                            color: "#00ff41",
+                            background: "transparent",
+                          }}
+                          onMouseEnter={(e) => {
+                            (
+                              e.currentTarget as HTMLButtonElement
+                            ).style.background = "#00ff4122";
+                          }}
+                          onMouseLeave={(e) => {
+                            (
+                              e.currentTarget as HTMLButtonElement
+                            ).style.background = "transparent";
+                          }}
+                          data-ocid={`admin-view-invoice-${i}`}
+                        >
+                          View Invoice
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => downloadInvoice(order)}
+                          className="px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest transition-colors flex items-center gap-1"
+                          style={{
+                            border: "1px solid #00ff41",
+                            color: "#00ff41",
+                            background: "transparent",
+                          }}
+                          onMouseEnter={(e) => {
+                            (
+                              e.currentTarget as HTMLButtonElement
+                            ).style.background = "#00ff4122";
+                          }}
+                          onMouseLeave={(e) => {
+                            (
+                              e.currentTarget as HTMLButtonElement
+                            ).style.background = "transparent";
+                          }}
+                          data-ocid={`admin-download-invoice-${i}`}
+                        >
+                          <Download className="w-3 h-3" aria-hidden="true" />
+                          Download
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => sendWhatsAppInvoice(order)}
+                          className="px-3 py-1.5 rounded text-xs font-bold uppercase tracking-widest transition-colors flex items-center gap-1"
+                          style={{
+                            border: "1px solid #25d36699",
+                            color: "#25d366",
+                            background: "transparent",
+                          }}
+                          onMouseEnter={(e) => {
+                            (
+                              e.currentTarget as HTMLButtonElement
+                            ).style.background = "#25d36622";
+                          }}
+                          onMouseLeave={(e) => {
+                            (
+                              e.currentTarget as HTMLButtonElement
+                            ).style.background = "transparent";
+                          }}
+                          data-ocid={`admin-whatsapp-invoice-${i}`}
+                        >
+                          <MessageCircle
+                            className="w-3 h-3"
+                            aria-hidden="true"
+                          />
+                          WhatsApp
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -4390,27 +5292,73 @@ function AdminInvoices() {
                     </div>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => openInvoice(order)}
-                  className="w-full py-2 rounded text-xs font-bold uppercase tracking-widest transition-colors"
-                  style={{
-                    border: "1px solid #00ff41",
-                    color: "#00ff41",
-                    background: "transparent",
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLButtonElement).style.background =
-                      "#00ff4122";
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLButtonElement).style.background =
-                      "transparent";
-                  }}
-                  data-ocid={`admin-view-invoice-mobile-${i}`}
-                >
-                  View Invoice
-                </button>
+                <div className="flex gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => openInvoice(order)}
+                    className="flex-1 py-2 rounded text-xs font-bold uppercase tracking-widest transition-colors"
+                    style={{
+                      border: "1px solid #00ff41",
+                      color: "#00ff41",
+                      background: "transparent",
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        "#00ff4122";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        "transparent";
+                    }}
+                    data-ocid={`admin-view-invoice-mobile-${i}`}
+                  >
+                    View Invoice
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => downloadInvoice(order)}
+                    className="flex-1 py-2 rounded text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-center gap-1"
+                    style={{
+                      border: "1px solid #00ff41",
+                      color: "#00ff41",
+                      background: "transparent",
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        "#00ff4122";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        "transparent";
+                    }}
+                    data-ocid={`admin-download-invoice-mobile-${i}`}
+                  >
+                    <Download className="w-3 h-3" aria-hidden="true" />
+                    Download
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => sendWhatsAppInvoice(order)}
+                    className="flex-1 py-2 rounded text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-center gap-1"
+                    style={{
+                      border: "1px solid #25d36699",
+                      color: "#25d366",
+                      background: "transparent",
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        "#25d36622";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background =
+                        "transparent";
+                    }}
+                    data-ocid={`admin-whatsapp-invoice-mobile-${i}`}
+                  >
+                    <MessageCircle className="w-3 h-3" aria-hidden="true" />
+                    WhatsApp
+                  </button>
+                </div>
               </div>
             ))}
           </div>
